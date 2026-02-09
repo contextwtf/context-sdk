@@ -1,0 +1,15 @@
+{
+  "name": "context-markets-sdk-monorepo",
+  "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "npm run build --workspace=packages/sdk && npm run build --workspace=packages/agent",
+    "clean": "rm -rf packages/*/dist",
+    "typecheck": "tsc --noEmit --workspaces"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
