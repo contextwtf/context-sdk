@@ -29,3 +29,7 @@ export {
   SimpleMmStrategy,
   type SimpleMmOptions,
 } from "./strategies/simple-mm.js";
+export {
+  AdaptiveMmStrategy,
+  type AdaptiveMmOptions,
+} from "./strategies/adaptive-mm.js";
