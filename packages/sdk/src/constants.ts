@@ -127,3 +127,28 @@ export const HOLDINGS_ABI = [
     outputs: [],
   },
 ] as const;
+
+export const SETTLEMENT_ABI = [
+  {
+    name: "mintCompleteSetsFromHoldings",
+    type: "function",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "marketId", type: "bytes32" },
+      { name: "amount", type: "uint256" },
+    ],
+    outputs: [],
+  },
+  {
+    name: "burnCompleteSetsFromHoldings",
+    type: "function",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "marketId", type: "bytes32" },
+      { name: "amount", type: "uint256" },
+      { name: "recipient", type: "address" },
+      { name: "creditInternal", type: "bool" },
+    ],
+    outputs: [],
+  },
+] as const;

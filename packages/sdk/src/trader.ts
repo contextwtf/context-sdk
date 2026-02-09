@@ -16,6 +16,7 @@ import {
   USDC_ADDRESS,
   ERC20_ABI,
   HOLDINGS_ABI,
+  SETTLEMENT_ABI,
 } from "./constants.js";
 import { ContextConfigError } from "./errors.js";
 import { encodePriceCents, encodeSize, calculateMaxFee } from "./encoding.js";
@@ -342,6 +343,66 @@ export class ContextTrader extends ContextClient {
       address: this.address,
       amount: amount.toString(),
     });
+  }
+
+  // ─── Complete Sets ───
+
+  /**
+   * Mint complete sets from Holdings USDC balance.
+   * Debits USDC from Holdings and credits YES+NO outcome tokens to Holdings.
+   * @param marketId - Market to mint for (bytes32 hex)
+   * @param amount - Number of complete sets (in USDC, 6 decimals)
+   */
+  async mintCompleteSets(marketId: string, amount: number): Promise<Hex> {
+    const publicClient = createPublicClient({
+      chain: baseSepolia,
+      transport: http(),
+    });
+
+    const amountRaw = parseUnits(amount.toString(), 6);
+
+    const hash = await this.walletClient.writeContract({
+      account: this.account,
+      chain: baseSepolia,
+      address: SETTLEMENT_ADDRESS,
+      abi: SETTLEMENT_ABI,
+      functionName: "mintCompleteSetsFromHoldings",
+      args: [marketId as Hex, amountRaw],
+    });
+
+    await publicClient.waitForTransactionReceipt({ hash });
+    return hash;
+  }
+
+  /**
+   * Burn complete sets from Holdings to recover USDC.
+   * @param marketId - Market to burn for (bytes32 hex)
+   * @param amount - Number of complete sets (in USDC, 6 decimals)
+   * @param creditInternal - If true, credits USDC to Holdings; if false, transfers to wallet
+   */
+  async burnCompleteSets(
+    marketId: string,
+    amount: number,
+    creditInternal = true,
+  ): Promise<Hex> {
+    const publicClient = createPublicClient({
+      chain: baseSepolia,
+      transport: http(),
+    });
+
+    const amountRaw = parseUnits(amount.toString(), 6);
+
+    const hash = await this.walletClient.writeContract({
+      account: this.account,
+      chain: baseSepolia,
+      address: SETTLEMENT_ADDRESS,
+      abi: SETTLEMENT_ABI,
+      functionName: "burnCompleteSetsFromHoldings",
+      args: [marketId as Hex, amountRaw, this.address, creditInternal],
+    });
+
+    await publicClient.waitForTransactionReceipt({ hash });
+    return hash;
   }
 
   // ─── Holdings Deposit / Withdraw ───

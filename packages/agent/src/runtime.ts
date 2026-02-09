@@ -179,6 +179,11 @@ export class AgentRuntime {
         if (action.type === "no_action") continue;
         await this.executeAction(action);
       }
+
+      // 8. Re-fetch open orders after execution so newly placed orders
+      //    are tracked in previousOrders for fill detection next cycle
+      const postExecState = await this.fetchAgentState();
+      this.updatePreviousOrders(postExecState.openOrders);
     } catch (err) {
       this.logger.logError(err, `cycle ${cycle}`);
     }
@@ -314,17 +319,58 @@ export class AgentRuntime {
       })),
     ]);
 
-    // Normalize portfolio: API returns { portfolio: [], marketIds: [] }
+    // Normalize portfolio: API returns { portfolio: [...], marketIds: [] }
+    // Each position has { balance, outcomeIndex, outcomeName, marketId, netInvestment, ... }
+    // We need to map to Position { marketId, outcome, size, avgPrice }
     const portfolioAny = rawPortfolio as any;
+    const rawPositions: any[] =
+      portfolioAny.positions ?? portfolioAny.portfolio ?? [];
     const normalizedPortfolio = {
       address: portfolioAny.address ?? this.trader.address,
-      positions: portfolioAny.positions ?? portfolioAny.portfolio ?? [],
+      positions: rawPositions.map((p: any) => ({
+        marketId: p.marketId,
+        outcome: p.outcome ?? p.outcomeName?.toLowerCase() ?? (p.outcomeIndex === 0 ? "no" : "yes"),
+        size: typeof p.size === "number"
+          ? p.size
+          : p.balance
+            ? Number(p.balance) / 1e6
+            : 0,
+        avgPrice: p.avgPrice ?? 0,
+        // Preserve raw fields for debugging
+        outcomeIndex: p.outcomeIndex,
+        balance: p.balance,
+        netInvestment: p.netInvestment,
+      })),
     };
 
     // Normalize orders: API returns { orders: [], cursor: null }
-    const openOrders = Array.isArray(rawOrders)
+    // Each order has { outcomeIndex, side (number), price (string), size (string), filledSize (string) }
+    // We need to map to Order { outcome, side (string), price (number), size (number), filledSize (number) }
+    const allOrders = Array.isArray(rawOrders)
       ? rawOrders
       : (rawOrders as any).orders ?? [];
+
+    // Filter to only open orders — API returns all statuses (cancelled, voided, filled)
+    const openOrders = allOrders
+      .filter((o: any) => !o.status || o.status === "open")
+      .map((o: any) => ({
+        ...o,
+        outcome: o.outcome ?? (o.outcomeIndex === 0 ? "no" : "yes"),
+        side: typeof o.side === "string" ? o.side : o.side === 0 ? "buy" : "sell",
+        price: typeof o.price === "number" ? o.price : Number(o.price),
+        size: typeof o.size === "number" ? o.size : Number(o.size) / 1e6,
+        filledSize: typeof o.filledSize === "number"
+          ? o.filledSize
+          : o.filledSize != null
+            ? Number(o.filledSize) / 1e6
+            : 0,
+        remainingSize: typeof o.remainingSize === "number"
+          ? o.remainingSize
+          : o.remainingSize != null
+            ? Number(o.remainingSize) / 1e6
+            : undefined,
+        percentFilled: o.percentFilled ?? 0,
+      }));
 
     return { portfolio: normalizedPortfolio, openOrders, balance };
   }

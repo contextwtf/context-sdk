@@ -11,12 +11,42 @@
  *   DRY_RUN=false npx tsx examples/adaptive-mm-agent.ts  # live
  */
 import { AgentRuntime, AdaptiveMmStrategy, OracleFairValue } from "@context-markets/agent";
+import { ContextTrader } from "@context-markets/sdk";
 import type { Hex } from "viem";
+
+const MARKET_IDS = [
+  // Will Context Markets announce a physical grocery store?
+  "0x869b848d648b2bd27fa121a4e1b9b378dc825869c1f52dd6ae02adad57442e21",
+];
+
+/** Mint complete sets so the MM has inventory for sell orders. */
+async function ensureInventory(trader: ContextTrader, mintAmount: number) {
+  console.log(`[setup] Minting ${mintAmount} complete sets per market...`);
+
+  for (const marketId of MARKET_IDS) {
+    try {
+      const hash = await trader.mintCompleteSets(marketId, mintAmount);
+      console.log(`[setup] Minted ${mintAmount} sets for ${marketId.slice(0, 8)}... tx=${hash}`);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(`[setup] Mint failed for ${marketId.slice(0, 8)}...: ${msg}`);
+    }
+  }
+
+  const balance = await trader.getMyBalance();
+  console.log(`[setup] USDC balance: ${(Number(balance.usdc.balance) / 1e6).toFixed(2)}`);
+  if (balance.outcomeTokens.length > 0) {
+    for (const t of balance.outcomeTokens) {
+      console.log(`[setup]   ${t.outcomeName} (${t.marketId.slice(0, 8)}...): ${(Number(t.balance) / 1e6).toFixed(2)}`);
+    }
+  }
+}
 
 async function main() {
   const apiKey = process.env.CONTEXT_API_KEY;
   const privateKey = process.env.CONTEXT_PRIVATE_KEY as Hex | undefined;
   const dryRun = process.env.DRY_RUN !== "false";
+  const mintAmount = Number(process.env.MINT_AMOUNT ?? "100");
 
   const traderConfig =
     apiKey && privateKey
@@ -30,24 +60,20 @@ async function main() {
     process.exit(1);
   }
 
+  // Mint inventory before starting (live mode only)
+  if (traderConfig && !dryRun && mintAmount > 0) {
+    const trader = new ContextTrader(traderConfig);
+    await ensureInventory(trader, mintAmount);
+  }
+
   const agent = new AgentRuntime({
     trader: traderConfig,
     strategy: new AdaptiveMmStrategy({
-      markets: {
-        type: "ids",
-        ids: [
-          // Will the US conduct a military strike against Iran?
-          "0x100f1e5cb7b165fb65ca673e78cc875c43e24009186b2abedfb1eeb157076587",
-          // Will Sam Altman post about an OpenAI Super Bowl commercial?
-          "0xb5f329e05db1957d502f3a360e90a9bcfd364466720ea937a48283f10728e392",
-          // Will Context Markets announce a physical grocery store?
-          "0x869b848d648b2bd27fa121a4e1b9b378dc825869c1f52dd6ae02adad57442e21",
-        ],
-      },
+      markets: { type: "ids", ids: MARKET_IDS },
       fairValueCents: 50,
-      levels: 3,
+      levels: 1,
       levelSpacingCents: 2,
-      levelSize: 10,
+      levelSize: 5,
       baseSpreadCents: 2,
       skewPerContract: 0.1,
       maxSkewCents: 5,
