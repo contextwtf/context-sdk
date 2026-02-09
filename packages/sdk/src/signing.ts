@@ -7,8 +7,8 @@ import {
   http,
   keccak256,
   toBytes,
-  privateKeyToAccount,
 } from "viem";
+import { privateKeyToAccount } from "viem/accounts";
 import { baseSepolia } from "viem/chains";
 import {
   EIP712_DOMAIN,

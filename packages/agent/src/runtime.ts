@@ -180,7 +180,7 @@ export class AgentRuntime {
   ): Promise<MarketSnapshot[]> {
     return Promise.all(
       marketIds.map(async (id) => {
-        const [market, quotes, orderbook, oracleSignals] =
+        const [rawMarket, rawQuotes, rawOrderbook, rawOracle] =
           await Promise.all([
             this.client.getMarket(id),
             this.client.getQuotes(id).catch(() => []),
@@ -189,6 +189,22 @@ export class AgentRuntime {
               .catch(() => ({ bids: [], asks: [] })),
             this.client.getOracleSignals(id).catch(() => []),
           ]);
+
+        // Normalize: API wraps some responses
+        const market = (rawMarket as any).market ?? rawMarket;
+        const quotes = Array.isArray(rawQuotes) ? rawQuotes : [rawQuotes];
+        const orderbook = (rawOrderbook as any).bids
+          ? rawOrderbook
+          : { bids: [], asks: [] };
+
+        // Oracle: API returns { oracle: {...} | null }
+        const oracleData = (rawOracle as any).oracle ?? rawOracle;
+        const oracleSignals = !oracleData
+          ? []
+          : Array.isArray(oracleData)
+            ? oracleData.filter(Boolean)
+            : [oracleData];
+
         return { market, quotes, orderbook, oracleSignals };
       }),
     );
@@ -209,7 +225,7 @@ export class AgentRuntime {
       };
     }
 
-    const [portfolio, openOrders, balance] = await Promise.all([
+    const [rawPortfolio, rawOrders, balance] = await Promise.all([
       this.trader.getMyPortfolio().catch(() => ({
         address: this.trader!.address,
         positions: [],
@@ -221,7 +237,19 @@ export class AgentRuntime {
       })),
     ]);
 
-    return { portfolio, openOrders, balance };
+    // Normalize portfolio: API returns { portfolio: [], marketIds: [] }
+    const portfolioAny = rawPortfolio as any;
+    const normalizedPortfolio = {
+      address: portfolioAny.address ?? this.trader.address,
+      positions: portfolioAny.positions ?? portfolioAny.portfolio ?? [],
+    };
+
+    // Normalize orders: API returns { orders: [], cursor: null }
+    const openOrders = Array.isArray(rawOrders)
+      ? rawOrders
+      : (rawOrders as any).orders ?? [];
+
+    return { portfolio: normalizedPortfolio, openOrders, balance };
   }
 
   private async executeAction(action: Action): Promise<void> {
@@ -277,7 +305,15 @@ export class AgentRuntime {
       );
       try {
         const nonces = state.openOrders.map((o) => o.nonce);
-        await this.trader.bulkCancelOrders(nonces);
+        // API limits bulk cancel to 20 per request — batch accordingly
+        const BATCH_SIZE = 20;
+        for (let i = 0; i < nonces.length; i += BATCH_SIZE) {
+          const batch = nonces.slice(i, i + BATCH_SIZE);
+          await this.trader.bulkCancelOrders(batch);
+          console.log(
+            `[agent] Cancelled batch ${Math.floor(i / BATCH_SIZE) + 1} (${batch.length} orders)`,
+          );
+        }
       } catch (err) {
         this.logger.logError(err, "shutdown cancel");
       }

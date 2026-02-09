@@ -78,9 +78,9 @@ export class TradeLogger {
 
   logShutdown(state: AgentState): void {
     this.log("shutdown", {
-      openOrders: state.openOrders.length,
-      positions: state.portfolio.positions.length,
-      balance: state.balance.usdc,
+      openOrders: state.openOrders?.length ?? 0,
+      positions: state.portfolio?.positions?.length ?? 0,
+      balance: state.balance?.usdc ?? 0,
     });
   }
 

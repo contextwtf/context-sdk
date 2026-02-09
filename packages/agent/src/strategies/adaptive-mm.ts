@@ -10,9 +10,9 @@ import type { Order } from "@context-markets/sdk";
 export interface AdaptiveMmOptions {
   /** Markets to make markets on. */
   markets: MarketSelector;
-  /** Predetermined anchor price in cents (e.g., 50). */
+  /** Predetermined YES fair value in cents (e.g., 50). NO is derived as 100 - YES. */
   fairValueCents: number;
-  /** Number of bid/ask levels to quote (e.g., 3). */
+  /** Number of bid/ask levels per outcome (e.g., 3). */
   levels: number;
   /** Cents between each level (e.g., 2). */
   levelSpacingCents: number;
@@ -30,22 +30,31 @@ export interface AdaptiveMmOptions {
   useOracleAnchor?: boolean;
 }
 
-interface QuoteState {
+type Outcome = "yes" | "no";
+
+interface OutcomeQuoteState {
   fairValue: number;
   skew: number;
   bidPrices: number[];
   askPrices: number[];
-  nonces: string[];
+}
+
+interface MarketQuoteState {
+  yes: OutcomeQuoteState;
+  no: OutcomeQuoteState;
 }
 
 /**
  * Adaptive Market Maker Strategy
  *
- * Quotes a multi-level bid/ask ladder around a fair value,
- * tracks inventory, and skews quotes to manage position risk.
+ * Quotes multi-level bid/ask ladders on BOTH YES and NO outcomes,
+ * tracks inventory per outcome, and skews quotes to manage position risk.
  *
+ * Per outcome:
  * - Positive inventory (long) → skew DOWN (lower asks to offload, lower bids to slow buying)
  * - Negative inventory (short) → skew UP (raise bids to accumulate, raise asks to slow selling)
+ *
+ * YES fair value and NO fair value are complementary: NO_FV = 100 - YES_FV
  */
 export class AdaptiveMmStrategy implements Strategy {
   readonly name = "Adaptive MM";
@@ -61,7 +70,7 @@ export class AdaptiveMmStrategy implements Strategy {
   private readonly requoteDeltaCents: number;
   private readonly useOracleAnchor: boolean;
 
-  private lastQuotes = new Map<string, QuoteState>();
+  private lastQuotes = new Map<string, MarketQuoteState>();
 
   constructor(options: AdaptiveMmOptions) {
     this.selector = options.markets;
@@ -100,30 +109,130 @@ export class AdaptiveMmStrategy implements Strategy {
   ): Action[] {
     const { market, oracleSignals } = snapshot;
 
-    // 1. Determine fair value
-    let fairValue = this.fairValueCents;
+    // 1. Determine YES fair value (NO = 100 - YES)
+    let yesFV = this.fairValueCents;
 
     if (this.useOracleAnchor && oracleSignals.length > 0) {
-      const best = oracleSignals.reduce((a, b) =>
-        b.confidence > a.confidence ? b : a,
+      const withConfidence = oracleSignals.filter(
+        (s) => typeof s.confidence === "number" && !isNaN(s.confidence),
       );
-      // Oracle confidence is 0-1, map to cents
-      fairValue = Math.round(best.confidence * 100);
-      fairValue = clamp(fairValue, 1, 99);
+      if (withConfidence.length > 0) {
+        const best = withConfidence.reduce((a, b) =>
+          b.confidence > a.confidence ? b : a,
+        );
+        yesFV = Math.round(best.confidence * 100);
+        yesFV = clamp(yesFV, 1, 99);
+      }
     }
 
-    // 2. Calculate inventory skew
-    const position = state.portfolio.positions.find(
-      (p) => p.marketId === market.id,
+    const noFV = 100 - yesFV;
+
+    // 2. Calculate inventory skew per outcome
+    const yesPosition = state.portfolio.positions.find(
+      (p) => p.marketId === market.id && p.outcome === "yes",
     );
-    const positionSize = position ? position.size : 0;
-    const inventorySkew = clamp(
-      positionSize * this.skewPerContract,
+    const noPosition = state.portfolio.positions.find(
+      (p) => p.marketId === market.id && p.outcome === "no",
+    );
+
+    const yesSize = yesPosition ? yesPosition.size : 0;
+    const noSize = noPosition ? noPosition.size : 0;
+
+    const yesSkew = clamp(
+      yesSize * this.skewPerContract,
+      -this.maxSkewCents,
+      this.maxSkewCents,
+    );
+    const noSkew = clamp(
+      noSize * this.skewPerContract,
       -this.maxSkewCents,
       this.maxSkewCents,
     );
 
-    // 3. Generate quote ladder
+    // 3. Generate quote ladders for both outcomes
+    const yesLadder = this.generateLadder(yesFV, yesSkew);
+    const noLadder = this.generateLadder(noFV, noSkew);
+
+    console.log(
+      `[adaptive-mm] ${market.id.slice(0, 8)}... YES: FV=${yesFV}¢ pos=${yesSize} skew=${yesSkew.toFixed(1)}¢ bids=[${yesLadder.bidPrices}] asks=[${yesLadder.askPrices}]`,
+    );
+    console.log(
+      `[adaptive-mm] ${market.id.slice(0, 8)}...  NO: FV=${noFV}¢ pos=${noSize} skew=${noSkew.toFixed(1)}¢ bids=[${noLadder.bidPrices}] asks=[${noLadder.askPrices}]`,
+    );
+
+    // 4. Diff against existing orders
+    const existing = this.lastQuotes.get(market.id);
+
+    const newState: MarketQuoteState = {
+      yes: { fairValue: yesFV, skew: yesSkew, ...yesLadder },
+      no: { fairValue: noFV, skew: noSkew, ...noLadder },
+    };
+
+    if (existing) {
+      const yesChanged = this.outcomeChanged(existing.yes, newState.yes);
+      const noChanged = this.outcomeChanged(existing.no, newState.no);
+
+      if (!yesChanged && !noChanged) {
+        return [
+          {
+            type: "no_action",
+            reason: `Quotes still fresh for ${market.id.slice(0, 8)}`,
+          },
+        ];
+      }
+
+      // Cancel all our open orders for this market using state from API
+      const actions: Action[] = [];
+      const marketOrders = state.openOrders.filter(
+        (o) => o.marketId === market.id,
+      );
+      for (const order of marketOrders) {
+        actions.push({ type: "cancel_order", nonce: order.nonce });
+      }
+
+      if (marketOrders.length > 0) {
+        console.log(
+          `[adaptive-mm] Cancelling ${marketOrders.length} existing orders for ${market.id.slice(0, 8)}...`,
+        );
+      }
+
+      actions.push(
+        ...this.buildLadder(market.id, "yes", yesLadder.bidPrices, yesLadder.askPrices),
+        ...this.buildLadder(market.id, "no", noLadder.bidPrices, noLadder.askPrices),
+      );
+
+      this.lastQuotes.set(market.id, newState);
+      return actions;
+    }
+
+    // Fresh placement — cancel any stale orders from previous runs
+    const actions: Action[] = [];
+    const staleOrders = state.openOrders.filter(
+      (o) => o.marketId === market.id,
+    );
+    for (const order of staleOrders) {
+      actions.push({ type: "cancel_order", nonce: order.nonce });
+    }
+
+    if (staleOrders.length > 0) {
+      console.log(
+        `[adaptive-mm] Cleaning ${staleOrders.length} stale orders for ${market.id.slice(0, 8)}...`,
+      );
+    }
+
+    actions.push(
+      ...this.buildLadder(market.id, "yes", yesLadder.bidPrices, yesLadder.askPrices),
+      ...this.buildLadder(market.id, "no", noLadder.bidPrices, noLadder.askPrices),
+    );
+
+    this.lastQuotes.set(market.id, newState);
+    return actions;
+  }
+
+  private generateLadder(
+    fairValue: number,
+    skew: number,
+  ): { bidPrices: number[]; askPrices: number[] } {
     const bidPrices: number[] = [];
     const askPrices: number[] = [];
 
@@ -133,7 +242,7 @@ export class AdaptiveMmStrategy implements Strategy {
           fairValue -
             this.baseSpreadCents -
             i * this.levelSpacingCents -
-            inventorySkew,
+            skew,
         ),
         1,
         99,
@@ -143,7 +252,7 @@ export class AdaptiveMmStrategy implements Strategy {
           fairValue +
             this.baseSpreadCents +
             i * this.levelSpacingCents -
-            inventorySkew,
+            skew,
         ),
         1,
         99,
@@ -152,65 +261,24 @@ export class AdaptiveMmStrategy implements Strategy {
       askPrices.push(askPrice);
     }
 
-    console.log(
-      `[adaptive-mm] ${market.id.slice(0, 8)}... FV=${fairValue}¢ pos=${positionSize} skew=${inventorySkew.toFixed(1)}¢ bids=[${bidPrices}] asks=[${askPrices}]`,
+    return { bidPrices, askPrices };
+  }
+
+  private outcomeChanged(
+    prev: OutcomeQuoteState,
+    next: OutcomeQuoteState,
+  ): boolean {
+    const fvDelta = Math.abs(prev.fairValue - next.fairValue);
+    const skewDelta = Math.abs(prev.skew - next.skew);
+    return (
+      fvDelta >= this.requoteDeltaCents ||
+      skewDelta >= this.requoteDeltaCents
     );
-
-    // 4. Diff against existing orders
-    const existing = this.lastQuotes.get(market.id);
-
-    if (existing) {
-      const fvDelta = Math.abs(existing.fairValue - fairValue);
-      const skewDelta = Math.abs(existing.skew - inventorySkew);
-
-      if (
-        fvDelta < this.requoteDeltaCents &&
-        skewDelta < this.requoteDeltaCents
-      ) {
-        return [
-          {
-            type: "no_action",
-            reason: `Quotes still fresh (fvDelta=${fvDelta.toFixed(1)}¢, skewDelta=${skewDelta.toFixed(1)}¢)`,
-          },
-        ];
-      }
-
-      // Cancel all existing orders then place new ladder
-      const actions: Action[] = [];
-
-      for (const nonce of existing.nonces) {
-        actions.push({ type: "cancel_order", nonce });
-      }
-
-      actions.push(...this.buildLadder(market.id, bidPrices, askPrices));
-
-      this.lastQuotes.set(market.id, {
-        fairValue,
-        skew: inventorySkew,
-        bidPrices,
-        askPrices,
-        nonces: [],
-      });
-
-      return actions;
-    }
-
-    // Fresh placement
-    const actions = this.buildLadder(market.id, bidPrices, askPrices);
-
-    this.lastQuotes.set(market.id, {
-      fairValue,
-      skew: inventorySkew,
-      bidPrices,
-      askPrices,
-      nonces: [],
-    });
-
-    return actions;
   }
 
   private buildLadder(
     marketId: string,
+    outcome: Outcome,
     bidPrices: number[],
     askPrices: number[],
   ): Action[] {
@@ -220,7 +288,7 @@ export class AdaptiveMmStrategy implements Strategy {
       actions.push({
         type: "place_order",
         marketId,
-        outcome: "yes",
+        outcome,
         side: "buy",
         priceCents: price,
         size: this.levelSize,
@@ -231,7 +299,7 @@ export class AdaptiveMmStrategy implements Strategy {
       actions.push({
         type: "place_order",
         marketId,
-        outcome: "yes",
+        outcome,
         side: "sell",
         priceCents: price,
         size: this.levelSize,

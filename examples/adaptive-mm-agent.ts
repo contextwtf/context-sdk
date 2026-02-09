@@ -1,6 +1,6 @@
 /**
- * Adaptive Market Maker Agent — quotes multi-level bid/ask ladder
- * with inventory-aware skewing.
+ * Adaptive Market Maker Agent — quotes multi-level bid/ask ladders
+ * on both YES and NO outcomes with per-outcome inventory skewing.
  *
  * Requires (for live mode):
  *   CONTEXT_API_KEY=ctx_pk_...
@@ -33,7 +33,17 @@ async function main() {
   const agent = new AgentRuntime({
     trader: traderConfig,
     strategy: new AdaptiveMmStrategy({
-      markets: { type: "search", query: "politics", status: "active" },
+      markets: {
+        type: "ids",
+        ids: [
+          // Will the US conduct a military strike against Iran?
+          "0x100f1e5cb7b165fb65ca673e78cc875c43e24009186b2abedfb1eeb157076587",
+          // Will Sam Altman post about an OpenAI Super Bowl commercial?
+          "0xb5f329e05db1957d502f3a360e90a9bcfd364466720ea937a48283f10728e392",
+          // Will Context Markets announce a physical grocery store?
+          "0x869b848d648b2bd27fa121a4e1b9b378dc825869c1f52dd6ae02adad57442e21",
+        ],
+      },
       fairValueCents: 50,
       levels: 3,
       levelSpacingCents: 2,
@@ -46,10 +56,10 @@ async function main() {
     }),
     risk: {
       maxPositionSize: 200,
-      maxOpenOrders: 30,
+      maxOpenOrders: 80,
       maxOrderSize: 50,
       maxLoss: -100,
-      maxOrdersPerMarketPerCycle: 10,
+      maxOrdersPerMarketPerCycle: 20,
     },
     intervalMs: 15_000,
     dryRun,

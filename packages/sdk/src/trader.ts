@@ -6,6 +6,7 @@ import {
   createPublicClient,
   http,
   maxUint256,
+  parseUnits,
 } from "viem";
 import { baseSepolia } from "viem/chains";
 import { ContextClient } from "./client.js";
@@ -341,5 +342,49 @@ export class ContextTrader extends ContextClient {
       address: this.address,
       amount: amount.toString(),
     });
+  }
+
+  // ─── Holdings Deposit / Withdraw ───
+
+  async depositUsdc(amount: number): Promise<Hex> {
+    const publicClient = createPublicClient({
+      chain: baseSepolia,
+      transport: http(),
+    });
+
+    const amountRaw = parseUnits(amount.toString(), 6);
+
+    const hash = await this.walletClient.writeContract({
+      account: this.account,
+      chain: baseSepolia,
+      address: HOLDINGS_ADDRESS,
+      abi: HOLDINGS_ABI,
+      functionName: "deposit",
+      args: [USDC_ADDRESS, amountRaw],
+    });
+
+    await publicClient.waitForTransactionReceipt({ hash });
+    return hash;
+  }
+
+  async withdrawUsdc(amount: number): Promise<Hex> {
+    const publicClient = createPublicClient({
+      chain: baseSepolia,
+      transport: http(),
+    });
+
+    const amountRaw = parseUnits(amount.toString(), 6);
+
+    const hash = await this.walletClient.writeContract({
+      account: this.account,
+      chain: baseSepolia,
+      address: HOLDINGS_ADDRESS,
+      abi: HOLDINGS_ABI,
+      functionName: "withdraw",
+      args: [USDC_ADDRESS, amountRaw],
+    });
+
+    await publicClient.waitForTransactionReceipt({ hash });
+    return hash;
   }
 }
