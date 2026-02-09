@@ -62,7 +62,18 @@ export interface Order {
   size: number;
   status?: string;
   createdAt?: string;
+  filledSize?: number;
+  remainingSize?: number;
+  percentFilled?: number;
   [key: string]: unknown;
+}
+
+export interface Fill {
+  order: Order;
+  previousFilledSize: number;
+  currentFilledSize: number;
+  fillSize: number;
+  type: "partial" | "full";
 }
 
 export interface PlaceOrderRequest {

@@ -5,6 +5,7 @@ import type {
   AgentState,
   Action,
 } from "../strategy.js";
+import type { Fill } from "@context-markets/sdk";
 
 export interface SimpleMmOptions {
   /** Markets to make markets on. */
@@ -151,10 +152,10 @@ export class SimpleMmStrategy implements Strategy {
     return actions;
   }
 
-  onFill(order: { nonce: string; marketId?: string }): void {
+  onFill(fill: Fill): void {
     // If one of our quotes was filled, remove tracking so we re-quote
-    if (order.marketId) {
-      this.lastQuotes.delete(order.marketId);
+    if (fill.order.marketId) {
+      this.lastQuotes.delete(fill.order.marketId);
     }
   }
 

@@ -5,7 +5,8 @@ import type {
   AgentState,
   Action,
 } from "../strategy.js";
-import type { Order } from "@context-markets/sdk";
+import type { Fill } from "@context-markets/sdk";
+import type { FairValueProvider } from "../fair-value.js";
 
 export interface AdaptiveMmOptions {
   /** Markets to make markets on. */
@@ -26,8 +27,8 @@ export interface AdaptiveMmOptions {
   maxSkewCents: number;
   /** Min mid-move in cents before re-quoting (e.g., 1). */
   requoteDeltaCents: number;
-  /** If true, anchor fair value to highest-confidence oracle signal. */
-  useOracleAnchor?: boolean;
+  /** Pluggable fair value source. Overrides fairValueCents when provided. */
+  fairValueProvider?: FairValueProvider;
 }
 
 type Outcome = "yes" | "no";
@@ -68,7 +69,7 @@ export class AdaptiveMmStrategy implements Strategy {
   private readonly skewPerContract: number;
   private readonly maxSkewCents: number;
   private readonly requoteDeltaCents: number;
-  private readonly useOracleAnchor: boolean;
+  private readonly fairValueProvider?: FairValueProvider;
 
   private lastQuotes = new Map<string, MarketQuoteState>();
 
@@ -82,7 +83,7 @@ export class AdaptiveMmStrategy implements Strategy {
     this.skewPerContract = options.skewPerContract;
     this.maxSkewCents = options.maxSkewCents;
     this.requoteDeltaCents = options.requoteDeltaCents;
-    this.useOracleAnchor = options.useOracleAnchor ?? false;
+    this.fairValueProvider = options.fairValueProvider;
   }
 
   async selectMarkets(): Promise<MarketSelector> {
@@ -96,33 +97,30 @@ export class AdaptiveMmStrategy implements Strategy {
     const actions: Action[] = [];
 
     for (const snapshot of markets) {
-      const marketActions = this.evaluateMarket(snapshot, state);
+      const marketActions = await this.evaluateMarket(snapshot, state);
       actions.push(...marketActions);
     }
 
     return actions;
   }
 
-  private evaluateMarket(
+  private async evaluateMarket(
     snapshot: MarketSnapshot,
     state: AgentState,
-  ): Action[] {
-    const { market, oracleSignals } = snapshot;
+  ): Promise<Action[]> {
+    const { market } = snapshot;
 
     // 1. Determine YES fair value (NO = 100 - YES)
     let yesFV = this.fairValueCents;
+    let fvConfidence = 1;
 
-    if (this.useOracleAnchor && oracleSignals.length > 0) {
-      const withConfidence = oracleSignals.filter(
-        (s) => typeof s.confidence === "number" && !isNaN(s.confidence),
+    if (this.fairValueProvider) {
+      const estimate = await this.fairValueProvider.estimate(snapshot);
+      yesFV = clamp(Math.round(estimate.yesCents), 1, 99);
+      fvConfidence = estimate.confidence;
+      console.log(
+        `[adaptive-mm] FV from ${this.fairValueProvider.name}: ${yesFV}¢ (confidence: ${fvConfidence.toFixed(2)})`,
       );
-      if (withConfidence.length > 0) {
-        const best = withConfidence.reduce((a, b) =>
-          b.confidence > a.confidence ? b : a,
-        );
-        yesFV = Math.round(best.confidence * 100);
-        yesFV = clamp(yesFV, 1, 99);
-      }
     }
 
     const noFV = 100 - yesFV;
@@ -309,10 +307,10 @@ export class AdaptiveMmStrategy implements Strategy {
     return actions;
   }
 
-  onFill(order: Order): void {
-    if (order.marketId) {
+  onFill(fill: Fill): void {
+    if (fill.order.marketId) {
       // Clear tracking so we re-quote on next cycle with updated inventory
-      this.lastQuotes.delete(order.marketId);
+      this.lastQuotes.delete(fill.order.marketId);
     }
   }
 

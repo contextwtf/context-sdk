@@ -1,10 +1,11 @@
 import type { Action, MarketSnapshot, AgentState } from "./strategy.js";
+import type { Fill } from "@context-markets/sdk";
 import type { RiskCheckResult } from "./risk.js";
 
 export interface LogEntry {
   timestamp: string;
   cycle: number;
-  type: "cycle_start" | "evaluation" | "risk_check" | "execution" | "error" | "shutdown";
+  type: "cycle_start" | "evaluation" | "risk_check" | "execution" | "fill" | "error" | "shutdown";
   data: unknown;
 }
 
@@ -68,6 +69,19 @@ export class TradeLogger {
     });
   }
 
+  logFill(fill: Fill): void {
+    this.log("fill", {
+      marketId: fill.order.marketId,
+      nonce: fill.order.nonce,
+      outcome: fill.order.outcome,
+      side: fill.order.side,
+      fillSize: fill.fillSize,
+      type: fill.type,
+      previousFilledSize: fill.previousFilledSize,
+      currentFilledSize: fill.currentFilledSize,
+    });
+  }
+
   logError(error: unknown, context?: string): void {
     this.log("error", {
       context,
@@ -124,6 +138,13 @@ export class TradeLogger {
           `${prefix} Executed: ${(data as { action: string }).action}`,
         );
         break;
+      case "fill": {
+        const f = data as { marketId: string; fillSize: number; type: string; outcome: string; side: string };
+        console.log(
+          `${prefix} [fill] ${f.type} fill: ${f.fillSize} ${f.outcome}/${f.side} on ${f.marketId.slice(0, 8)}...`,
+        );
+        break;
+      }
       case "error":
         console.error(
           `${prefix} ERROR: ${(data as { message: string }).message}`,

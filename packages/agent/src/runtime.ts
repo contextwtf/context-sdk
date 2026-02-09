@@ -3,6 +3,8 @@ import {
   ContextClient,
   ContextTrader,
   type ContextTraderOptions,
+  type Order,
+  type Fill,
 } from "@context-markets/sdk";
 import type {
   Strategy,
@@ -41,6 +43,10 @@ export class AgentRuntime {
   private running = false;
   private timer: ReturnType<typeof setTimeout> | null = null;
   private abortController: AbortController | null = null;
+
+  // Fill detection state
+  private previousOrders = new Map<string, { order: Order; filledSize: number }>();
+  private pendingCancels = new Set<string>();
 
   constructor(options: AgentRuntimeOptions) {
     if (options.trader) {
@@ -139,6 +145,9 @@ export class AgentRuntime {
       // 4. Fetch agent state
       const state = await this.fetchAgentState();
 
+      // 4b. Detect fills (before evaluate so strategies can react)
+      this.detectFills(state.openOrders);
+
       // 5. Evaluate strategy
       const actions = await this.strategy.evaluate(snapshots, state);
       this.logger.logEvaluation(actions);
@@ -172,6 +181,74 @@ export class AgentRuntime {
       }
     } catch (err) {
       this.logger.logError(err, `cycle ${cycle}`);
+    }
+  }
+
+  private detectFills(currentOrders: Order[]): void {
+    if (this.previousOrders.size === 0) {
+      // First cycle — seed state, no fills to detect
+      this.updatePreviousOrders(currentOrders);
+      return;
+    }
+
+    const currentByNonce = new Map(
+      currentOrders.map((o) => [o.nonce, o]),
+    );
+
+    const fills: Fill[] = [];
+
+    for (const [nonce, prev] of this.previousOrders) {
+      // Skip orders we intentionally cancelled
+      if (this.pendingCancels.has(nonce)) continue;
+
+      const current = currentByNonce.get(nonce as Hex);
+
+      if (!current) {
+        // Order disappeared and we didn't cancel it → full fill
+        const prevFilled = prev.filledSize;
+        const totalSize = prev.order.size;
+        fills.push({
+          order: prev.order,
+          previousFilledSize: prevFilled,
+          currentFilledSize: totalSize,
+          fillSize: totalSize - prevFilled,
+          type: "full",
+        });
+      } else {
+        // Order still exists — check if filledSize increased
+        const currentFilled = current.filledSize ?? 0;
+        if (currentFilled > prev.filledSize) {
+          fills.push({
+            order: current,
+            previousFilledSize: prev.filledSize,
+            currentFilledSize: currentFilled,
+            fillSize: currentFilled - prev.filledSize,
+            type: currentFilled >= current.size ? "full" : "partial",
+          });
+        }
+      }
+    }
+
+    // Notify strategy and logger for each detected fill
+    for (const fill of fills) {
+      this.logger.logFill(fill);
+      if (this.strategy.onFill) {
+        this.strategy.onFill(fill);
+      }
+    }
+
+    // Update state for next cycle
+    this.updatePreviousOrders(currentOrders);
+    this.pendingCancels.clear();
+  }
+
+  private updatePreviousOrders(orders: Order[]): void {
+    this.previousOrders.clear();
+    for (const order of orders) {
+      this.previousOrders.set(order.nonce, {
+        order,
+        filledSize: order.filledSize ?? 0,
+      });
     }
   }
 
@@ -269,6 +346,7 @@ export class AgentRuntime {
           break;
         }
         case "cancel_order": {
+          this.pendingCancels.add(action.nonce);
           const result = await this.trader.cancelOrder(
             action.nonce as Hex,
           );
@@ -276,6 +354,7 @@ export class AgentRuntime {
           break;
         }
         case "cancel_replace": {
+          this.pendingCancels.add(action.cancelNonce);
           const result = await this.trader.cancelReplace(
             action.cancelNonce as Hex,
             {

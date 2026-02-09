@@ -4,6 +4,7 @@ import type {
   Orderbook,
   OracleSignal,
   Order,
+  Fill,
   Portfolio,
   Balance,
 } from "@context-markets/sdk";
@@ -85,8 +86,8 @@ export interface Strategy {
     state: AgentState,
   ): Promise<Action[]>;
 
-  /** Called when an order is filled. Optional. */
-  onFill?(order: Order, fill: unknown): void;
+  /** Called when an order fill is detected. Optional. */
+  onFill?(fill: Fill): void;
 
   /** Called on graceful shutdown. Optional. */
   onShutdown?(): Promise<void>;

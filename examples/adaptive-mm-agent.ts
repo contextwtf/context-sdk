@@ -10,7 +10,7 @@
  *   npx tsx examples/adaptive-mm-agent.ts                # dry run
  *   DRY_RUN=false npx tsx examples/adaptive-mm-agent.ts  # live
  */
-import { AgentRuntime, AdaptiveMmStrategy } from "@context-markets/agent";
+import { AgentRuntime, AdaptiveMmStrategy, OracleFairValue } from "@context-markets/agent";
 import type { Hex } from "viem";
 
 async function main() {
@@ -52,7 +52,7 @@ async function main() {
       skewPerContract: 0.1,
       maxSkewCents: 5,
       requoteDeltaCents: 1,
-      useOracleAnchor: true,
+      fairValueProvider: new OracleFairValue(50),
     }),
     risk: {
       maxPositionSize: 200,

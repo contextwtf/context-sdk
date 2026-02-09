@@ -14,6 +14,10 @@ export type {
   NoAction,
 } from "./strategy.js";
 
+// Fair value
+export type { FairValueEstimate, FairValueProvider } from "./fair-value.js";
+export { StaticFairValue, OracleFairValue, MidpointFairValue } from "./providers/index.js";
+
 // Risk
 export { RiskManager, type RiskLimits, type RiskCheckResult } from "./risk.js";
 

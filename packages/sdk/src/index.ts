@@ -46,6 +46,7 @@ export type {
   ActivityItem,
   // Orders
   Order,
+  Fill,
   PlaceOrderRequest,
   CancelResult,
   CancelReplaceResult,
