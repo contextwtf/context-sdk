@@ -1,42 +1,41 @@
 /**
- * Adaptive Market Maker Agent — quotes multi-level bid/ask ladders
- * on both YES and NO outcomes with per-outcome inventory skewing.
+ * Sports Trading Agent — LLM-powered price corrector for sports markets.
  *
- * Features:
- * - Flow-weighted fair value that moves with buy/sell flow
- * - All active markets (not hardcoded IDs)
- * - 5-level deep book
- * - Smart inventory minting (checks existing balances first)
- * - Restart resilience via .mm-state.json persistence
+ * Uses Claude Haiku to evaluate sports prediction markets, enriched with
+ * ESPN team stats and Vegas odds. Aggressively corrects mispricings by
+ * sweeping the book — selling YES into overpriced bids and buying YES
+ * at underpriced asks.
  *
- * Requires (for live mode):
- *   CONTEXT_API_KEY=ctx_pk_...
- *   CONTEXT_PRIVATE_KEY=0x...
+ * Mints complete sets on startup so it has inventory to sell both sides.
+ *
+ * Env vars:
+ *   ANTHROPIC_API_KEY=sk-ant-...   (required)
+ *   CONTEXT_API_KEY=ctx_pk_...     (required for live mode)
+ *   CONTEXT_PRIVATE_KEY=0x...      (required for live mode)
+ *   ODDS_API_KEY=...               (optional — Vegas odds enrichment)
+ *   DRY_RUN=false                  (default: true)
+ *   MINT_AMOUNT=50                 (complete sets per market, default: 50)
  *
  * Usage:
- *   npx tsx examples/adaptive-mm-agent.ts                # dry run
- *   DRY_RUN=false npx tsx examples/adaptive-mm-agent.ts  # live
+ *   npx tsx examples/sports-trading-agent.ts                    # dry run
+ *   DRY_RUN=false npx tsx examples/sports-trading-agent.ts      # live
  */
+
 import {
   AgentRuntime,
-  AdaptiveMmStrategy,
-  OracleFairValue,
-  MidpointFairValue,
-  StaticFairValue,
-  ChainedFairValue,
-  FlowWeightedFairValue,
+  EdgeTradingStrategy,
+  LlmFairValue,
 } from "@context-markets/agent";
 import { ContextClient, ContextTrader } from "@context-markets/sdk";
 import type { Hex } from "viem";
 
 /**
- * Smart inventory minting — checks existing token balances per market
- * and only mints the difference to reach the target amount.
+ * Mint complete sets so the trader has YES + NO tokens to sell.
+ * Checks existing balances first and only mints the delta.
  */
 async function ensureInventory(trader: ContextTrader, targetPerMarket: number) {
   console.log(`[setup] Ensuring ${targetPerMarket} sets per active market...`);
 
-  // Search for active markets
   const client = trader as ContextClient;
   const result = await client.searchMarkets({ status: "active" });
   const markets = result.markets;
@@ -48,7 +47,7 @@ async function ensureInventory(trader: ContextTrader, targetPerMarket: number) {
 
   console.log(`[setup] Found ${markets.length} active markets`);
 
-  // Check existing portfolio — API returns { portfolio: [...], marketIds, cursor }
+  // Check existing portfolio
   const rawPortfolio = await trader.getMyPortfolio() as any;
   const positions: any[] = rawPortfolio.positions ?? rawPortfolio.portfolio ?? [];
   const positionsByMarket = new Map<string, number>();
@@ -56,7 +55,6 @@ async function ensureInventory(trader: ContextTrader, targetPerMarket: number) {
   for (const pos of positions) {
     const size = typeof pos.size === "number" ? pos.size : Number(pos.balance ?? 0) / 1e6;
     const existing = positionsByMarket.get(pos.marketId) ?? Infinity;
-    // Track minimum across outcomes — complete sets need both YES and NO
     positionsByMarket.set(pos.marketId, Math.min(existing, size));
   }
 
@@ -94,7 +92,7 @@ async function main() {
   const apiKey = process.env.CONTEXT_API_KEY;
   const privateKey = process.env.CONTEXT_PRIVATE_KEY as Hex | undefined;
   const dryRun = process.env.DRY_RUN !== "false";
-  const mintAmount = Number(process.env.MINT_AMOUNT ?? "100");
+  const mintAmount = Number(process.env.MINT_AMOUNT ?? "50");
 
   const traderConfig =
     apiKey && privateKey
@@ -108,57 +106,58 @@ async function main() {
     process.exit(1);
   }
 
-  // Smart inventory minting (live mode only)
+  if (!process.env.ANTHROPIC_API_KEY) {
+    console.error("ANTHROPIC_API_KEY is required for LLM fair value estimation");
+    process.exit(1);
+  }
+
+  // Mint inventory so we have tokens to sell (live mode only)
   if (traderConfig && !dryRun && mintAmount > 0) {
     const trader = new ContextTrader(traderConfig);
     await ensureInventory(trader, mintAmount);
   }
 
-  // Chained anchor: oracle → 50¢ fallback
-  // NOTE: midpoint excluded — when MM is sole liquidity provider, midpoint
-  // just reads our own quotes back, creating a feedback loop.
-  const anchor = new ChainedFairValue([
-    new OracleFairValue(50),
-    new StaticFairValue(50),
-  ]);
+  // LLM fair value provider — Haiku + ESPN + Vegas enrichment
+  const llmFairValue = new LlmFairValue({
+    model: "claude-haiku-4-5-20251001",
+    cacheTtlMs: 120_000,     // 2 min cache for pre-game
+    liveCacheTtlMs: 30_000,  // 30s cache for live games
+    league: "nba",
+  });
+
+  // Edge trading strategy — sweeps mispriced levels
+  const strategy = new EdgeTradingStrategy({
+    markets: { type: "search", query: "", status: "active" },
+    fairValueProvider: llmFairValue,
+    minEdgeCents: 5,          // Need 5¢+ edge to trade
+    minConfidence: 0.6,       // Need medium+ confidence
+    baseSize: 5,              // 5 contracts per minEdge increment
+    maxOrderSize: 25,         // Up to 25 contracts per level
+    maxPositionPerMarket: 500, // Room to push price to FV
+  });
 
   const agent = new AgentRuntime({
     trader: traderConfig,
-    strategy: new AdaptiveMmStrategy({
-      markets: { type: "search", query: "", status: "active" },
-      fairValueCents: 50,
-      levels: 5,
-      levelSpacingCents: 2,
-      levelSize: 20,
-      baseSpreadCents: 2,
-      skewPerContract: 0.1,
-      maxSkewCents: 5,
-      requoteDeltaCents: 1,
-      fairValueProvider: new FlowWeightedFairValue({
-        anchorProvider: anchor,
-        impactCents: 0.2,
-        decayRate: 0.02,
-        maxDriftCents: 45,
-        statePath: ".mm-state.json",
-      }),
-    }),
+    strategy,
     risk: {
-      maxPositionSize: 5000,
+      maxPositionSize: 5000,  // Total across all markets
       maxOpenOrders: 500,
-      maxOrderSize: 200,
-      maxLoss: -500,
-      maxOrdersPerMarketPerCycle: 60,
+      maxOrderSize: 25,
+      maxLoss: -100,
     },
-    intervalMs: 15_000,
+    intervalMs: 30_000,       // 30s cycles (LLM calls take time)
     dryRun,
     maxCycles: dryRun ? 3 : 0,
   });
 
-  console.log(`Starting Adaptive MM (dryRun=${dryRun})...`);
-  console.log("  Markets: all active (search)");
-  console.log("  FV: flow-weighted with chained anchor (oracle → static)");
-  console.log("  Quoting: dual-side (YES + NO), 5 levels, spacing: 2¢, size: 5");
-  console.log("  State: .mm-state.json");
+  console.log(`Starting Sports Trading Agent (dryRun=${dryRun})...`);
+  console.log("Strategy: LLM edge trading (Haiku + ESPN + Vegas)");
+  console.log(`Config: minEdge=5¢, minConf=60%, baseSize=3, maxPos=50`);
+  if (process.env.ODDS_API_KEY) {
+    console.log("Vegas odds: enabled");
+  } else {
+    console.log("Vegas odds: disabled (set ODDS_API_KEY to enable)");
+  }
   console.log("Press Ctrl+C to stop\n");
 
   await agent.start();

@@ -2,16 +2,13 @@
  * Random Trader Agent — takes random trades against available liquidity.
  * Designed to test market maker adaptation by generating order flow.
  *
+ * Trades across all active markets, buying against best asks.
+ *
  * Usage:
  *   CONTEXT_API_KEY=... CONTEXT_PRIVATE_KEY=... npx tsx examples/random-trader-agent.ts
  */
-import { ContextTrader } from "@context-markets/sdk";
+import { ContextClient, ContextTrader } from "@context-markets/sdk";
 import type { Hex } from "viem";
-
-const MARKET_IDS = [
-  // Will Context Markets announce a physical grocery store?
-  "0x869b848d648b2bd27fa121a4e1b9b378dc825869c1f52dd6ae02adad57442e21",
-];
 
 function pick<T>(arr: T[]): T {
   return arr[Math.floor(Math.random() * arr.length)];
@@ -31,11 +28,14 @@ async function main() {
     signer: { privateKey } as const,
   });
 
-  console.log(`Random Trader: ${trader.address}`);
-  console.log("Buying against MM asks every 8-15s...\n");
+  const client = trader as ContextClient;
 
-  let cycle = 0;
-  const running = true;
+  console.log(`Random Trader: ${trader.address}`);
+  console.log("Trading across all active markets every 8-15s...\n");
+
+  // Refresh market list periodically
+  let marketIds: string[] = [];
+  let lastRefresh = 0;
 
   const onSignal = () => {
     console.log("\n[random-trader] Shutting down...");
@@ -44,13 +44,26 @@ async function main() {
   process.on("SIGINT", onSignal);
   process.on("SIGTERM", onSignal);
 
-  while (running) {
+  let cycle = 0;
+  while (true) {
     cycle++;
-    try {
-      // Pick a random market
-      const marketId = pick(MARKET_IDS);
 
-      // Get the orderbook
+    // Refresh market list every 5 minutes
+    if (Date.now() - lastRefresh > 5 * 60 * 1000) {
+      const result = await client.searchMarkets({ status: "active" });
+      marketIds = result.markets.map((m: { id: string }) => m.id);
+      lastRefresh = Date.now();
+      console.log(`[random-trader] Refreshed markets: ${marketIds.length} active`);
+    }
+
+    if (marketIds.length === 0) {
+      console.log(`[cycle ${cycle}] No active markets`);
+      await new Promise((r) => setTimeout(r, 15_000));
+      continue;
+    }
+
+    try {
+      const marketId = pick(marketIds);
       const ob = await trader.getOrderbook(marketId);
 
       const hasAsks = ob.asks && ob.asks.length > 0;
@@ -58,7 +71,6 @@ async function main() {
       if (!hasAsks) {
         console.log(`[cycle ${cycle}] No asks on ${marketId.slice(0, 8)}... skipping`);
       } else {
-        // Buy against the best ask
         const bestAsk = ob.asks[0].price;
         const outcome = pick(["yes", "no"] as const);
         const size = pick([1, 2, 3]);
@@ -74,14 +86,13 @@ async function main() {
           priceCents: bestAsk,
           size,
         });
-        console.log(`  ✓ Order placed`);
+        console.log(`  placed`);
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       console.log(`[cycle ${cycle}] Error: ${msg}`);
     }
 
-    // Wait 8-15s between trades
     const delay = 8_000 + Math.random() * 7_000;
     await new Promise((r) => setTimeout(r, delay));
   }

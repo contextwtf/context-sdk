@@ -82,7 +82,7 @@ export class ContextTrader extends ContextClient {
       trader: this.address,
       price,
       size,
-      outcomeIndex: req.outcome === "yes" ? 0 : 1,
+      outcomeIndex: req.outcome === "yes" ? 1 : 0,
       side: req.side === "buy" ? 0 : 1,
       nonce,
       expiry,
@@ -152,7 +152,7 @@ export class ContextTrader extends ContextClient {
       trader: this.address,
       price,
       size,
-      outcomeIndex: newOrder.outcome === "yes" ? 0 : 1,
+      outcomeIndex: newOrder.outcome === "yes" ? 1 : 0,
       side: newOrder.side === "buy" ? 0 : 1,
       nonce,
       expiry,
@@ -206,7 +206,7 @@ export class ContextTrader extends ContextClient {
           trader: this.address,
           price,
           size,
-          outcomeIndex: req.outcome === "yes" ? 0 : 1,
+          outcomeIndex: req.outcome === "yes" ? 1 : 0,
           side: req.side === "buy" ? 0 : 1,
           nonce,
           expiry,
@@ -260,6 +260,13 @@ export class ContextTrader extends ContextClient {
 
   async getMyOrders(marketId?: string): Promise<Order[]> {
     return this.getOrders({
+      trader: this.address,
+      marketId,
+    });
+  }
+
+  async getAllMyOrders(marketId?: string): Promise<Order[]> {
+    return this.getAllOrders({
       trader: this.address,
       marketId,
     });

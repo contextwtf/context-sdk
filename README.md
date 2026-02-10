@@ -79,6 +79,19 @@ const agent = new AgentRuntime({
 await agent.start(); // Ctrl+C to stop
 ```
 
+## Outcome Index Mapping
+
+**Important:** For binary YES/NO markets, the on-chain outcome index mapping is:
+
+| `outcomeIndex` | Outcome |
+|-----------------|---------|
+| **0** | **No** |
+| **1** | **Yes** |
+
+> **Note:** The public API docs currently list this as `0 = Yes, 1 = No` — that is incorrect.
+> The SDK handles this mapping internally: pass `outcome: "yes"` or `outcome: "no"` and the
+> SDK converts to the correct `outcomeIndex` for you.
+
 ## SDK (`@context-markets/sdk`)
 
 ### ContextClient (read-only)
@@ -87,7 +100,7 @@ await agent.start(); // Ctrl+C to stop
 |--------|-------------|
 | `searchMarkets({ query, status })` | Search markets by keyword |
 | `getMarket(id)` | Get market details |
-| `getQuotes(marketId)` | Get AI probability estimates |
+| `getQuotes(marketId)` | Get bid/ask/last prices per outcome |
 | `getOrderbook(marketId)` | Get bid/ask ladder |
 | `getOracleSignals(marketId)` | Get oracle confidence signals |
 | `simulateTrade(params)` | Simulate trade for slippage |
@@ -113,6 +126,8 @@ await agent.start(); // Ctrl+C to stop
 | `checkSetup()` | Check wallet approval status |
 | `setupWallet()` | Approve contracts for trading |
 | `mintTestUsdc(amount)` | Mint testnet USDC (Base Sepolia) |
+| `mintCompleteSets(marketId, amount)` | Mint YES+NO token pairs |
+| `burnCompleteSets(marketId, amount)` | Burn pairs to recover USDC |
 
 ### Pricing
 
@@ -131,16 +146,38 @@ Prices are in **cents** (1-99). Sizes are in **contracts**. The SDK handles on-c
 | `SimpleMmStrategy` | Quotes one bid/ask level around the orderbook midpoint |
 | `OracleTrackerStrategy` | Buys when oracle confidence exceeds market price by a threshold |
 | `AdaptiveMmStrategy` | Multi-level bid/ask ladders on YES + NO with inventory-aware skewing |
+| `EdgeTradingStrategy` | Directional trading when LLM fair value diverges from market price |
 
 ### AdaptiveMmStrategy
 
-The most complete strategy — quotes depth on both outcomes and adjusts to order flow:
+The most complete MM strategy — quotes depth on both outcomes and adjusts to order flow:
 
 - Quotes `N` levels of bids and asks on both YES and NO outcomes
 - YES fair value is configurable (or anchored to oracle); NO = 100 - YES
 - Tracks inventory per outcome independently
 - **Skews quotes** based on position: long inventory shifts quotes down to offload, short shifts up to accumulate
 - Only re-quotes when fair value or skew changes beyond a threshold
+
+### EdgeTradingStrategy
+
+LLM-powered directional trader that evaluates sports markets using real-time data:
+
+- Fetches **ESPN team stats** (record, PPG, recent form, streak) and **Vegas odds** (moneyline → implied probability)
+- Calls **Claude Haiku** with structured reasoning prompt to estimate fair value
+- Detects **live game state** (score, period, game clock) and adjusts probability accordingly
+- Places directional orders when edge >= threshold, with position limits and cooldowns
+- Handles **final games** deterministically (97¢ won / 3¢ lost) without LLM call
+
+### Fair Value Providers
+
+| Provider | Description |
+|----------|-------------|
+| `StaticFairValue` | Fixed value (e.g., 50¢) |
+| `MidpointFairValue` | Orderbook midpoint |
+| `OracleFairValue` | Oracle confidence signals |
+| `FlowWeightedFairValue` | Anchor + fill-driven drift with decay |
+| `ChainedFairValue` | Tries providers in order, first non-null wins |
+| `LlmFairValue` | Claude Haiku + ESPN + Vegas odds enrichment |
 
 ### Custom Strategies
 
@@ -169,7 +206,7 @@ The `AgentRuntime` enforces risk limits on every cycle:
 
 ```ts
 risk: {
-  maxPositionSize: 200,    // Max contracts per market
+  maxPositionSize: 200,    // Max contracts per outcome per market
   maxOpenOrders: 80,       // Global open order limit
   maxOrderSize: 50,        // Per-order size cap
   maxLoss: -100,           // Stop-loss threshold (USDC)
@@ -195,8 +232,21 @@ CONTEXT_API_KEY=ctx_pk_... CONTEXT_PRIVATE_KEY=0x... npx tsx examples/<file>.ts
 | `oracle-tracker-agent.ts` | Run the oracle tracker (dry run, 3 cycles) |
 | `adaptive-mm-agent.ts` | Run the adaptive market maker (dry run or live) |
 | `random-trader-agent.ts` | Generate random order flow against existing liquidity |
+| `sports-trading-agent.ts` | LLM-powered sports trader with ESPN + Vegas enrichment |
+| `audit-book.ts` | Audit all active orderbooks and open orders |
 
 Set `DRY_RUN=false` for live trading on any agent example.
+
+### Environment Variables
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `CONTEXT_API_KEY` | Yes (trading) | API key for authenticated endpoints |
+| `CONTEXT_PRIVATE_KEY` | Yes (trading) | Wallet private key for signing orders |
+| `ANTHROPIC_API_KEY` | For LLM strategies | Claude API key for Haiku fair value |
+| `ODDS_API_KEY` | Optional | The Odds API key for Vegas lines |
+| `DRY_RUN` | Optional | Set to `false` for live trading (default: `true`) |
+| `MINT_AMOUNT` | Optional | Complete sets to mint per market on MM startup |
 
 ## Architecture
 
@@ -210,12 +260,19 @@ Set `DRY_RUN=false` for live trading on any agent example.
 @context-markets/agent
 ├── AgentRuntime           # Event loop: fetch → evaluate → risk check → execute
 ├── Strategy (interface)   # Pluggable decision logic
-├── RiskManager            # Per-cycle limit enforcement
+├── RiskManager            # Per-cycle limit enforcement (per-outcome position tracking)
 ├── TradeLogger            # Structured logging with cycle tracking
+├── Signals
+│   ├── ESPN               # Team stats, standings, live game state
+│   └── Vegas              # Moneyline odds → implied probability
+├── Fair Value Providers
+│   ├── Static / Midpoint / Oracle / FlowWeighted / Chained
+│   └── LlmFairValue       # Claude Haiku with sports signal enrichment
 └── Built-in Strategies
     ├── SimpleMmStrategy       # Spread around midpoint
     ├── OracleTrackerStrategy  # Signal-following
-    └── AdaptiveMmStrategy     # Multi-level, inventory-aware MM
+    ├── AdaptiveMmStrategy     # Multi-level, dual-side, inventory-aware MM
+    └── EdgeTradingStrategy    # LLM-powered directional trading
 ```
 
 ## Network

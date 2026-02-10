@@ -35,6 +35,11 @@ export class RiskManager {
     // Track orders-per-market this cycle
     const ordersPerMarket = new Map<string, number>();
 
+    // Count cancels in this batch to deduct from open order count.
+    // This prevents the startup problem where 559 stale cancels + 180
+    // new placements all get evaluated against the pre-cancel count.
+    let pendingCancels = 0;
+
     for (const action of actions) {
       if (action.type === "no_action") {
         allowed.push(action);
@@ -44,10 +49,16 @@ export class RiskManager {
       if (action.type === "cancel_order") {
         // Cancels are always allowed
         allowed.push(action);
+        pendingCancels++;
         continue;
       }
 
-      const reason = this.checkAction(action, state, ordersPerMarket);
+      const reason = this.checkAction(
+        action,
+        state,
+        ordersPerMarket,
+        pendingCancels,
+      );
       if (reason) {
         blocked.push({ action, reason });
       } else {
@@ -74,6 +85,7 @@ export class RiskManager {
     action: Action & { type: "place_order" | "cancel_replace" },
     state: AgentState,
     ordersPerMarket: Map<string, number>,
+    pendingCancels: number = 0,
   ): string | null {
     const size =
       action.type === "place_order" || action.type === "cancel_replace"
@@ -85,19 +97,20 @@ export class RiskManager {
       return `Order size ${size} exceeds max ${this.limits.maxOrderSize}`;
     }
 
-    // Max open orders
+    // Max open orders (deduct pending cancels from the same batch)
     if (this.limits.maxOpenOrders) {
-      const currentOpen = state.openOrders.length;
-      if (currentOpen >= this.limits.maxOpenOrders) {
-        return `Open orders (${currentOpen}) at max (${this.limits.maxOpenOrders})`;
+      const effectiveOpen = state.openOrders.length - pendingCancels;
+      if (effectiveOpen >= this.limits.maxOpenOrders) {
+        return `Open orders (${effectiveOpen}) at max (${this.limits.maxOpenOrders})`;
       }
     }
 
-    // Max position size per market
-    if (this.limits.maxPositionSize) {
+    // Max position size per outcome (only for buy orders — sells reduce position)
+    if (this.limits.maxPositionSize && action.side === "buy") {
       const marketId = action.marketId;
+      const outcome = action.outcome;
       const existingPosition = state.portfolio.positions.find(
-        (p: Position) => p.marketId === marketId,
+        (p: Position) => p.marketId === marketId && p.outcome === outcome,
       );
       const currentSize = existingPosition?.size ?? 0;
       if (currentSize + size > this.limits.maxPositionSize) {

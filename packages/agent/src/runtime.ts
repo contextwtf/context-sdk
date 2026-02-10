@@ -192,6 +192,7 @@ export class AgentRuntime {
   private detectFills(currentOrders: Order[]): void {
     if (this.previousOrders.size === 0) {
       // First cycle — seed state, no fills to detect
+      console.log(`[fill-debug] Seeding ${currentOrders.length} orders`);
       this.updatePreviousOrders(currentOrders);
       return;
     }
@@ -199,6 +200,12 @@ export class AgentRuntime {
     const currentByNonce = new Map(
       currentOrders.map((o) => [o.nonce, o]),
     );
+
+    console.log(`[fill-debug] prev=${this.previousOrders.size} curr=${currentByNonce.size} cancels=${this.pendingCancels.size}`);
+
+    let disappeared = 0;
+    let filledInc = 0;
+    let unchanged = 0;
 
     const fills: Fill[] = [];
 
@@ -210,6 +217,7 @@ export class AgentRuntime {
 
       if (!current) {
         // Order disappeared and we didn't cancel it → full fill
+        disappeared++;
         const prevFilled = prev.filledSize;
         const totalSize = prev.order.size;
         fills.push({
@@ -223,6 +231,7 @@ export class AgentRuntime {
         // Order still exists — check if filledSize increased
         const currentFilled = current.filledSize ?? 0;
         if (currentFilled > prev.filledSize) {
+          filledInc++;
           fills.push({
             order: current,
             previousFilledSize: prev.filledSize,
@@ -230,8 +239,14 @@ export class AgentRuntime {
             fillSize: currentFilled - prev.filledSize,
             type: currentFilled >= current.size ? "full" : "partial",
           });
+        } else {
+          unchanged++;
         }
       }
+    }
+
+    if (disappeared > 0 || filledInc > 0) {
+      console.log(`[fill-debug] disappeared=${disappeared} filledInc=${filledInc} unchanged=${unchanged} fills=${fills.length}`);
     }
 
     // Notify strategy and logger for each detected fill
@@ -312,7 +327,7 @@ export class AgentRuntime {
         address: this.trader!.address,
         positions: [],
       })),
-      this.trader.getMyOrders().catch(() => []),
+      this.trader.getAllMyOrders().catch(() => []),
       this.trader.getMyBalance().catch(() => ({
         address: this.trader!.address,
         usdc: 0,
@@ -329,7 +344,7 @@ export class AgentRuntime {
       address: portfolioAny.address ?? this.trader.address,
       positions: rawPositions.map((p: any) => ({
         marketId: p.marketId,
-        outcome: p.outcome ?? p.outcomeName?.toLowerCase() ?? (p.outcomeIndex === 0 ? "no" : "yes"),
+        outcome: p.outcome ?? p.outcomeName?.toLowerCase() ?? (p.outcomeIndex === 1 ? "yes" : "no"),
         size: typeof p.size === "number"
           ? p.size
           : p.balance
@@ -355,7 +370,7 @@ export class AgentRuntime {
       .filter((o: any) => !o.status || o.status === "open")
       .map((o: any) => ({
         ...o,
-        outcome: o.outcome ?? (o.outcomeIndex === 0 ? "no" : "yes"),
+        outcome: o.outcome ?? (o.outcomeIndex === 1 ? "yes" : "no"),
         side: typeof o.side === "string" ? o.side : o.side === 0 ? "buy" : "sell",
         price: typeof o.price === "number" ? o.price : Number(o.price),
         size: typeof o.size === "number" ? o.size : Number(o.size) / 1e6,

@@ -102,7 +102,35 @@ export class ContextClient {
     return this.http.get<Order[]>("/orders", {
       trader: params?.trader,
       marketId: params?.marketId,
+      cursor: params?.cursor,
+      limit: params?.limit,
     });
+  }
+
+  /**
+   * Fetch all orders by paginating through cursor-based results.
+   * The API returns { orders: [...], cursor: "..." | null }.
+   */
+  async getAllOrders(params?: Omit<GetOrdersParams, "cursor">): Promise<Order[]> {
+    const allOrders: Order[] = [];
+    let cursor: string | undefined;
+
+    do {
+      const raw: any = await this.http.get("/orders", {
+        trader: params?.trader,
+        marketId: params?.marketId,
+        cursor,
+      });
+
+      const orders: Order[] = Array.isArray(raw) ? raw : raw.orders ?? [];
+      allOrders.push(...orders);
+      cursor = raw?.cursor ?? undefined;
+
+      // Safety: if API returns same cursor or no orders, bail
+      if (orders.length === 0) break;
+    } while (cursor);
+
+    return allOrders;
   }
 
   // ─── Portfolio / Balance ───

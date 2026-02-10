@@ -195,6 +195,8 @@ export interface SearchMarketsParams {
 export interface GetOrdersParams {
   trader?: Address;
   marketId?: string;
+  cursor?: string;
+  limit?: number;
 }
 
 export interface GetPriceHistoryParams {

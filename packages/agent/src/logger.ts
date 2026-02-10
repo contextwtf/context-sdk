@@ -12,6 +12,7 @@ export interface LogEntry {
 export class TradeLogger {
   private entries: LogEntry[] = [];
   private cycle = 0;
+  private readonly maxEntries = 1000;
 
   nextCycle(): number {
     return ++this.cycle;
@@ -110,6 +111,9 @@ export class TradeLogger {
       data,
     };
     this.entries.push(entry);
+    if (this.entries.length > this.maxEntries) {
+      this.entries = this.entries.slice(-this.maxEntries);
+    }
 
     // Console output
     const prefix = `[${entry.timestamp}] [cycle:${this.cycle}]`;
@@ -123,11 +127,14 @@ export class TradeLogger {
         );
         break;
       case "risk_check": {
-        const rc = data as { allowed: number; blocked: number };
+        const rc = data as { allowed: number; blocked: number; blockedReasons: { action: string; reason: string }[] };
         if (rc.blocked > 0) {
           console.warn(
             `${prefix} Risk: ${rc.blocked} blocked, ${rc.allowed} allowed`,
           );
+          for (const b of rc.blockedReasons) {
+            console.warn(`${prefix}   BLOCKED: ${b.action} — ${b.reason}`);
+          }
         } else {
           console.log(`${prefix} Risk: ${rc.allowed} allowed`);
         }

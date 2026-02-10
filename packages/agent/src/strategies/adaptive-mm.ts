@@ -31,31 +31,23 @@ export interface AdaptiveMmOptions {
   fairValueProvider?: FairValueProvider;
 }
 
-type Outcome = "yes" | "no";
-
-interface OutcomeQuoteState {
+interface QuoteState {
   fairValue: number;
   skew: number;
   bidPrices: number[];
   askPrices: number[];
 }
 
-interface MarketQuoteState {
-  yes: OutcomeQuoteState;
-  no: OutcomeQuoteState;
-}
-
 /**
- * Adaptive Market Maker Strategy
+ * Adaptive Market Maker Strategy (dual-side quoting)
  *
- * Quotes multi-level bid/ask ladders on BOTH YES and NO outcomes,
- * tracks inventory per outcome, and skews quotes to manage position risk.
+ * Quotes multi-level bid/ask ladders on both YES and NO outcomes.
+ * YES ladder is centered on yesFV, NO ladder on (100 - yesFV).
+ * Both sides adjust to order flow via the fair value provider.
  *
- * Per outcome:
- * - Positive inventory (long) → skew DOWN (lower asks to offload, lower bids to slow buying)
- * - Negative inventory (short) → skew UP (raise bids to accumulate, raise asks to slow selling)
- *
- * YES fair value and NO fair value are complementary: NO_FV = 100 - YES_FV
+ * Inventory skew adjusts quotes based on net YES position:
+ * - Long YES → YES skew DOWN + NO skew UP (offload YES, accumulate NO)
+ * - Short YES → YES skew UP + NO skew DOWN (accumulate YES, offload NO)
  */
 export class AdaptiveMmStrategy implements Strategy {
   readonly name = "Adaptive MM";
@@ -71,7 +63,7 @@ export class AdaptiveMmStrategy implements Strategy {
   private readonly requoteDeltaCents: number;
   private readonly fairValueProvider?: FairValueProvider;
 
-  private lastQuotes = new Map<string, MarketQuoteState>();
+  private lastQuotes = new Map<string, QuoteState>();
 
   constructor(options: AdaptiveMmOptions) {
     this.selector = options.markets;
@@ -110,7 +102,7 @@ export class AdaptiveMmStrategy implements Strategy {
   ): Promise<Action[]> {
     const { market } = snapshot;
 
-    // 1. Determine YES fair value (NO = 100 - YES)
+    // 1. Determine YES fair value
     let yesFV = this.fairValueCents;
     let fvConfidence = 1;
 
@@ -123,9 +115,9 @@ export class AdaptiveMmStrategy implements Strategy {
       );
     }
 
-    const noFV = 100 - yesFV;
-
-    // 2. Calculate inventory skew per outcome
+    // 2. Calculate inventory skew from net YES position
+    // YES position increases when we buy YES or when someone sells us YES.
+    // We also factor in NO position: holding NO is equivalent to being short YES.
     const yesPosition = state.portfolio.positions.find(
       (p) => p.marketId === market.id && p.outcome === "yes",
     );
@@ -135,42 +127,50 @@ export class AdaptiveMmStrategy implements Strategy {
 
     const yesSize = yesPosition ? yesPosition.size : 0;
     const noSize = noPosition ? noPosition.size : 0;
+    // Net YES exposure: long YES minus long NO (holding NO offsets YES risk)
+    const netYes = yesSize - noSize;
 
-    const yesSkew = clamp(
-      yesSize * this.skewPerContract,
+    const skew = clamp(
+      netYes * this.skewPerContract,
       -this.maxSkewCents,
       this.maxSkewCents,
     );
-    const noSkew = clamp(
-      noSize * this.skewPerContract,
-      -this.maxSkewCents,
-      this.maxSkewCents,
-    );
 
-    // 3. Generate quote ladders for both outcomes
-    const yesLadder = this.generateLadder(yesFV, yesSkew);
-    const noLadder = this.generateLadder(noFV, noSkew);
+    // 3. Generate YES + NO quote ladders
+    const yesLadder = this.generateLadder(yesFV, skew);
+    const noFV = 100 - yesFV;
+    const noLadder = this.generateLadder(noFV, -skew);
 
     console.log(
-      `[adaptive-mm] ${market.id.slice(0, 8)}... YES: FV=${yesFV}¢ pos=${yesSize} skew=${yesSkew.toFixed(1)}¢ bids=[${yesLadder.bidPrices}] asks=[${yesLadder.askPrices}]`,
+      `[adaptive-mm] ${market.id.slice(0, 8)}... yesFV=${yesFV}¢ noFV=${noFV}¢ yesPos=${yesSize} noPos=${noSize} net=${netYes} skew=${skew.toFixed(1)}¢`,
     );
     console.log(
-      `[adaptive-mm] ${market.id.slice(0, 8)}...  NO: FV=${noFV}¢ pos=${noSize} skew=${noSkew.toFixed(1)}¢ bids=[${noLadder.bidPrices}] asks=[${noLadder.askPrices}]`,
+      `  YES bids=[${yesLadder.bidPrices}] asks=[${yesLadder.askPrices}]  NO bids=[${noLadder.bidPrices}] asks=[${noLadder.askPrices}]`,
     );
 
-    // 4. Diff against existing orders
+    // 4. Diff against existing quotes
     const existing = this.lastQuotes.get(market.id);
 
-    const newState: MarketQuoteState = {
-      yes: { fairValue: yesFV, skew: yesSkew, ...yesLadder },
-      no: { fairValue: noFV, skew: noSkew, ...noLadder },
+    const newState: QuoteState = {
+      fairValue: yesFV,
+      skew,
+      bidPrices: yesLadder.bidPrices,
+      askPrices: yesLadder.askPrices,
     };
 
     if (existing) {
-      const yesChanged = this.outcomeChanged(existing.yes, newState.yes);
-      const noChanged = this.outcomeChanged(existing.no, newState.no);
+      const changed = this.quoteChanged(existing, newState);
 
-      if (!yesChanged && !noChanged) {
+      // Check if we actually have orders on the book — if orders were
+      // blocked by risk manager or consumed by traders, we need to requote
+      // even when FV hasn't changed.
+      const myOrdersForMarket = state.openOrders.filter(
+        (o) => o.marketId === market.id,
+      );
+      const expectedOrders = this.levels * 4; // levels * (bid+ask) * (YES+NO)
+      const bookThin = myOrdersForMarket.length < expectedOrders * 0.5;
+
+      if (!changed && !bookThin) {
         return [
           {
             type: "no_action",
@@ -179,7 +179,13 @@ export class AdaptiveMmStrategy implements Strategy {
         ];
       }
 
-      // Cancel all our open orders for this market using state from API
+      if (bookThin && !changed) {
+        console.log(
+          `[adaptive-mm] Replenishing ${market.id.slice(0, 8)}... (${myOrdersForMarket.length}/${expectedOrders} orders on book)`,
+        );
+      }
+
+      // Cancel all our open orders for this market
       const actions: Action[] = [];
       const marketOrders = state.openOrders.filter(
         (o) => o.marketId === market.id,
@@ -262,10 +268,7 @@ export class AdaptiveMmStrategy implements Strategy {
     return { bidPrices, askPrices };
   }
 
-  private outcomeChanged(
-    prev: OutcomeQuoteState,
-    next: OutcomeQuoteState,
-  ): boolean {
+  private quoteChanged(prev: QuoteState, next: QuoteState): boolean {
     const fvDelta = Math.abs(prev.fairValue - next.fairValue);
     const skewDelta = Math.abs(prev.skew - next.skew);
     return (
@@ -276,7 +279,7 @@ export class AdaptiveMmStrategy implements Strategy {
 
   private buildLadder(
     marketId: string,
-    outcome: Outcome,
+    outcome: "yes" | "no",
     bidPrices: number[],
     askPrices: number[],
   ): Action[] {
@@ -311,6 +314,10 @@ export class AdaptiveMmStrategy implements Strategy {
     if (fill.order.marketId) {
       // Clear tracking so we re-quote on next cycle with updated inventory
       this.lastQuotes.delete(fill.order.marketId);
+    }
+    // Forward to fair value provider so it can react to flow
+    if (this.fairValueProvider?.onFill) {
+      this.fairValueProvider.onFill(fill);
     }
   }
 

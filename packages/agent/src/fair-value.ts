@@ -1,3 +1,4 @@
+import type { Fill } from "@context-markets/sdk";
 import type { MarketSnapshot } from "./strategy.js";
 
 export interface FairValueEstimate {
@@ -12,4 +13,6 @@ export interface FairValueProvider {
   readonly name: string;
   /** Estimate fair value from a market snapshot. */
   estimate(snapshot: MarketSnapshot): Promise<FairValueEstimate>;
+  /** Called when an order fill is detected. Optional — allows providers to react to flow. */
+  onFill?(fill: Fill): void;
 }
