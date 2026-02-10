@@ -90,8 +90,16 @@ export const SPORT_LEAGUES: Record<string, { sport: string; league: string }> = 
   nhl: { sport: "hockey", league: "nhl" },
   ncaaf: { sport: "football", league: "college-football" },
   ncaab: { sport: "basketball", league: "mens-college-basketball" },
+  // Soccer
   mls: { sport: "soccer", league: "usa.1" },
   epl: { sport: "soccer", league: "eng.1" },
+  laliga: { sport: "soccer", league: "esp.1" },
+  bundesliga: { sport: "soccer", league: "ger.1" },
+  seriea: { sport: "soccer", league: "ita.1" },
+  ligue1: { sport: "soccer", league: "fra.1" },
+  championship: { sport: "soccer", league: "eng.2" },
+  ucl: { sport: "soccer", league: "uefa.champions" },
+  uel: { sport: "soccer", league: "uefa.europa" },
 };
 
 export const TEAM_ALIASES: Record<string, string[]> = {
@@ -213,7 +221,9 @@ export async function getUpcomingGames(league: string): Promise<UpcomingGame[] |
   if (!leagueInfo) return null;
 
   try {
-    const url = `${ESPN_API}/${leagueInfo.sport}/${leagueInfo.league}/scoreboard`;
+    // Pass today's date to avoid stale yesterday's scoreboard
+    const today = new Date().toISOString().slice(0, 10).replace(/-/g, ""); // YYYYMMDD
+    const url = `${ESPN_API}/${leagueInfo.sport}/${leagueInfo.league}/scoreboard?dates=${today}`;
     const response = await fetch(url);
     if (!response.ok) return null;
 
@@ -552,18 +562,93 @@ export function extractLeagueFromQuestion(question: string | undefined | null): 
   if (lower.includes("nba") || lower.includes("nba finals")) return "nba";
   if (lower.includes("mlb") || lower.includes("world series")) return "mlb";
   if (lower.includes("nhl") || lower.includes("stanley cup")) return "nhl";
-  if (lower.includes("march madness") || lower.includes("ncaa basketball") || lower.includes("ncaab")) return "ncaab";
+  if (lower.includes("march madness") || lower.includes("ncaa basketball") || lower.includes("ncaab") || lower.includes("college basketball")) return "ncaab";
 
-  // Team-based detection
-  const nbaTeams = ["lakers", "celtics", "warriors", "heat", "nuggets", "bucks", "knicks", "thunder", "cavaliers", "suns", "mavericks", "timberwolves"];
-  const nflTeams = ["chiefs", "49ers", "eagles", "bills", "cowboys", "ravens", "lions"];
-  const mlbTeams = ["yankees", "dodgers", "braves", "astros", "phillies"];
-  const nhlTeams = ["rangers", "panthers", "oilers", "bruins", "avalanche"];
+  // Soccer league mentions
+  if (lower.includes("premier league") || lower.includes("epl")) return "epl";
+  if (lower.includes("la liga") || lower.includes("laliga")) return "laliga";
+  if (lower.includes("bundesliga")) return "bundesliga";
+  if (lower.includes("serie a")) return "seriea";
+  if (lower.includes("ligue 1")) return "ligue1";
+  if (lower.includes("champions league") || lower.includes("ucl")) return "ucl";
+  if (lower.includes("europa league") || lower.includes("uel")) return "uel";
+  if (lower.includes("mls") || lower.includes("major league soccer")) return "mls";
+  if (lower.includes("championship") && lower.includes("english")) return "championship";
+
+  // Team-based detection (all 30 teams per league)
+  const nbaTeams = [
+    "lakers", "celtics", "warriors", "heat", "nuggets", "bucks", "knicks", "thunder",
+    "cavaliers", "cavs", "suns", "mavericks", "mavs", "timberwolves", "wolves",
+    "rockets", "clippers", "spurs", "pacers", "pistons", "hornets", "nets",
+    "bulls", "jazz", "76ers", "sixers", "kings", "pelicans", "grizzlies",
+    "trail blazers", "blazers", "hawks", "wizards", "raptors", "magic",
+  ];
+  const nflTeams = [
+    "chiefs", "49ers", "niners", "eagles", "bills", "cowboys", "ravens", "lions",
+    "dolphins", "jets", "patriots", "steelers", "bengals", "browns", "texans",
+    "colts", "jaguars", "titans", "broncos", "chargers", "raiders", "seahawks",
+    "cardinals", "rams", "falcons", "panthers", "saints", "buccaneers", "bucs",
+    "packers", "bears", "vikings", "commanders",
+  ];
+  const mlbTeams = [
+    "yankees", "dodgers", "braves", "astros", "phillies", "mets", "cubs",
+    "red sox", "padres", "guardians", "orioles", "twins", "mariners", "rays",
+    "blue jays", "brewers", "diamondbacks", "d-backs", "giants", "cardinals",
+    "reds", "pirates", "royals", "tigers", "white sox", "rockies", "angels",
+    "athletics", "nationals", "marlins",
+  ];
+  const nhlTeams = [
+    "rangers", "panthers", "oilers", "bruins", "avalanche", "maple leafs", "leafs",
+    "canadiens", "habs", "red wings", "blackhawks", "penguins", "flyers",
+    "capitals", "caps", "lightning", "hurricanes", "canes", "blues", "stars",
+    "flames", "canucks", "senators", "sens", "jets", "predators", "preds",
+    "sharks", "ducks", "wild", "kraken", "golden knights", "knights",
+    "islanders", "devils", "sabres", "blue jackets",
+  ];
+  // EPL teams (all 20)
+  const eplTeams = [
+    "arsenal", "aston villa", "bournemouth", "brentford", "brighton",
+    "chelsea", "crystal palace", "everton", "fulham", "ipswich",
+    "leicester", "liverpool", "manchester city", "man city", "manchester united", "man utd", "man united",
+    "newcastle", "nottingham forest", "southampton", "tottenham", "spurs",
+    "west ham", "wolverhampton", "wolves",
+  ];
+  // La Liga teams (top clubs)
+  const laligaTeams = [
+    "real madrid", "barcelona", "atletico madrid", "atletico",
+    "real sociedad", "athletic bilbao", "villarreal", "real betis",
+    "sevilla", "valencia", "getafe", "celta vigo", "girona",
+    "mallorca", "las palmas", "osasuna", "alaves", "rayo vallecano",
+  ];
+  // Bundesliga teams (top clubs)
+  const bundesligaTeams = [
+    "bayern munich", "bayern", "borussia dortmund", "dortmund", "bayer leverkusen", "leverkusen",
+    "rb leipzig", "leipzig", "eintracht frankfurt", "frankfurt",
+    "wolfsburg", "freiburg", "hoffenheim", "stuttgart", "union berlin",
+    "werder bremen", "augsburg", "mainz", "monchengladbach", "gladbach",
+  ];
+  // Serie A teams (top clubs)
+  const serieaTeams = [
+    "juventus", "juve", "inter milan", "inter", "ac milan", "milan",
+    "napoli", "roma", "lazio", "atalanta", "fiorentina",
+    "torino", "bologna", "sassuolo", "monza", "udinese", "lecce",
+  ];
+  // Ligue 1 teams (top clubs)
+  const ligue1Teams = [
+    "psg", "paris saint-germain", "marseille", "lyon", "monaco",
+    "lille", "nice", "lens", "rennes", "strasbourg",
+  ];
 
   if (nbaTeams.some((t) => lower.includes(t))) return "nba";
   if (nflTeams.some((t) => lower.includes(t))) return "nfl";
   if (mlbTeams.some((t) => lower.includes(t))) return "mlb";
   if (nhlTeams.some((t) => lower.includes(t))) return "nhl";
+  // Soccer team detection — check before generic "soccer" / "football" keywords
+  if (eplTeams.some((t) => lower.includes(t))) return "epl";
+  if (laligaTeams.some((t) => lower.includes(t))) return "laliga";
+  if (bundesligaTeams.some((t) => lower.includes(t))) return "bundesliga";
+  if (serieaTeams.some((t) => lower.includes(t))) return "seriea";
+  if (ligue1Teams.some((t) => lower.includes(t))) return "ligue1";
 
   return null;
 }
@@ -610,5 +695,136 @@ export function extractTeamsFromTitle(title: string | undefined | null): string[
   }
 
   // Sort by position in title and return up to 2
-  return found.sort((a, b) => a.position - b.position).slice(0, 2).map((f) => f.name);
+  if (found.length > 0) {
+    return found.sort((a, b) => a.position - b.position).slice(0, 2).map((f) => f.name);
+  }
+
+  // Fallback: parse "Will X defeat Y?" pattern for unrecognized teams (e.g. college)
+  const defeatMatch = lower.match(/will (?:the )?(.+?) defeat (?:the )?(.+?)(?:\s+in\b|\s+tonight|\?|$)/);
+  if (defeatMatch) {
+    return [defeatMatch[1].trim(), defeatMatch[2].trim()];
+  }
+
+  // Fallback: parse "Will X cover ... against Y?" pattern for spread markets
+  const coverMatchWithOpponent = lower.match(/will (?:the )?(.+?) cover .+?(?:against|vs\.?|versus) (?:the )?(.+?)(?:\s+in\b|\s+tonight|\?|$)/);
+  if (coverMatchWithOpponent) {
+    return [coverMatchWithOpponent[1].trim(), coverMatchWithOpponent[2].trim()];
+  }
+  const coverMatch = lower.match(/will (?:the )?(.+?) cover/);
+  if (coverMatch) {
+    return [coverMatch[1].trim()];
+  }
+
+  // Fallback: totals patterns
+  // "Will the X vs Y game go over/under Z?" or "Will the X and Y game go over/under Z?"
+  const totalsVsMatch = lower.match(/will (?:the )?(.+?) (?:vs\.?|versus|and|&) (?:the )?(.+?) (?:game |match |total )?(?:go |combine (?:for )?)?(?:over|under)/);
+  if (totalsVsMatch) {
+    return [totalsVsMatch[1].trim(), totalsVsMatch[2].trim()];
+  }
+  // "Will there be over/under X goals in X vs Y?"
+  const totalsInMatch = lower.match(/(?:in|for) (?:the )?(.+?) (?:vs\.?|versus|and|&) (?:the )?(.+?)(?:\s+game|\s+match|\?|$)/);
+  if (totalsInMatch) {
+    return [totalsInMatch[1].trim(), totalsInMatch[2].trim()];
+  }
+
+  return [];
+}
+
+/**
+ * Extract spread value from a market title.
+ * Returns the spread from the subject team's perspective, or null if not a spread market.
+ *
+ * Examples:
+ *   "Will the Lakers cover -3.5 against the Spurs?" → -3.5
+ *   "Will the Pacers cover +7 against the Knicks?" → 7
+ *   "Will the Chiefs cover the spread (-6.5) against the Bills?" → -6.5
+ *   "Will Arsenal defeat Chelsea?" → null (not a spread market)
+ */
+export function extractSpreadFromTitle(title: string | undefined | null): number | null {
+  if (!title) return null;
+  const lower = title.toLowerCase();
+
+  // Must contain "cover" or "spread" to be a spread market
+  if (!lower.includes("cover") && !lower.includes("spread")) return null;
+
+  // Match patterns: "cover -3.5", "cover +7", "cover the spread (-6.5)", "spread of -3.5"
+  const patterns = [
+    /cover\s+([+-]?\d+\.?\d*)/,
+    /spread\s*\(?([+-]?\d+\.?\d*)\)?/,
+    /([+-]\d+\.?\d*)\s*(?:point|pt)?\s*spread/,
+  ];
+
+  for (const pattern of patterns) {
+    const match = lower.match(pattern);
+    if (match) {
+      return parseFloat(match[1]);
+    }
+  }
+
+  return null;
+}
+
+// ─── Totals Extraction ───
+
+export interface TotalsInfo {
+  /** The line (e.g. 224.5, 2.5) */
+  line: number;
+  /** Which side of the total this market represents */
+  side: "over" | "under";
+}
+
+/**
+ * Extract totals/over-under info from a market title.
+ * Returns the line and side, or null if not a totals market.
+ *
+ * Examples:
+ *   "Will the Lakers vs Spurs game go over 224.5?" → { line: 224.5, side: "over" }
+ *   "Will there be under 2.5 goals in Chelsea vs Leeds?" → { line: 2.5, side: "under" }
+ *   "Will the Rockets and Clippers combine for over 215.5 points?" → { line: 215.5, side: "over" }
+ *   "Will the total points in Lakers vs Clippers exceed 224.5?" → { line: 224.5, side: "over" }
+ *   "Will the Lakers defeat the Spurs?" → null (not a totals market)
+ */
+export function extractTotalsFromTitle(title: string | undefined | null): TotalsInfo | null {
+  if (!title) return null;
+  const lower = title.toLowerCase();
+
+  // Exclude spread "cover" markets
+  if (lower.includes("cover")) return null;
+
+  // Must contain totals-related keyword
+  const hasTotalsKeyword = lower.includes("over") || lower.includes("under") || lower.includes("total")
+    || lower.includes("o/u") || lower.includes("fewer") || lower.includes("more than") || lower.includes("exceed");
+  if (!hasTotalsKeyword) return null;
+
+  // "exceed X" / "more than X" → over
+  const exceedMatch = lower.match(/(?:exceed|more than|above)\s+(\d+\.?\d*)/);
+  if (exceedMatch) {
+    return { line: parseFloat(exceedMatch[1]), side: "over" };
+  }
+
+  // "fewer than X" / "less than X" / "stay under X" → under
+  const fewerMatch = lower.match(/(?:fewer than|less than|stay under|below)\s+(\d+\.?\d*)/);
+  if (fewerMatch) {
+    return { line: parseFloat(fewerMatch[1]), side: "under" };
+  }
+
+  // "over X", "go over X", "combine for over X"
+  const overMatch = lower.match(/over\s+(\d+\.?\d*)/);
+  if (overMatch) {
+    return { line: parseFloat(overMatch[1]), side: "over" };
+  }
+
+  // "under X", "go under X"
+  const underMatch = lower.match(/under\s+(\d+\.?\d*)/);
+  if (underMatch) {
+    return { line: parseFloat(underMatch[1]), side: "under" };
+  }
+
+  // "o/u X" or "total X" — default to over
+  const ouMatch = lower.match(/(?:o\/u|total)\s+(\d+\.?\d*)/);
+  if (ouMatch) {
+    return { line: parseFloat(ouMatch[1]), side: "over" };
+  }
+
+  return null;
 }

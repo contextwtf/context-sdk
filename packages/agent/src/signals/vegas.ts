@@ -25,6 +25,30 @@ export interface GameOdds {
   };
 }
 
+export interface TotalsOdds {
+  event: string;
+  homeTeam: string;
+  awayTeam: string;
+  /** The totals line (e.g. 224.5, 2.5) */
+  line: number;
+  /** Implied probability of going over the line. */
+  overImplied: number;
+  /** Implied probability of going under the line. */
+  underImplied: number;
+}
+
+export interface SpreadOdds {
+  event: string;
+  homeTeam: string;
+  awayTeam: string;
+  /** Spread from the subject team's perspective (negative = favorite, positive = underdog). */
+  spread: number;
+  /** Implied probability the subject team covers. */
+  coverImplied: number;
+  /** Implied probability the subject team does NOT cover. */
+  noCoverImplied: number;
+}
+
 // ─── Sport Key Mapping ───
 
 export const SPORT_CONFIG: Record<string, { key: string; name: string }> = {
@@ -33,6 +57,16 @@ export const SPORT_CONFIG: Record<string, { key: string; name: string }> = {
   ncaab: { key: "basketball_ncaab", name: "NCAAB" },
   mlb: { key: "baseball_mlb", name: "MLB" },
   nhl: { key: "icehockey_nhl", name: "NHL" },
+  // Soccer
+  epl: { key: "soccer_epl", name: "EPL" },
+  laliga: { key: "soccer_spain_la_liga", name: "La Liga" },
+  bundesliga: { key: "soccer_germany_bundesliga", name: "Bundesliga" },
+  seriea: { key: "soccer_italy_serie_a", name: "Serie A" },
+  ligue1: { key: "soccer_france_ligue_one", name: "Ligue 1" },
+  ucl: { key: "soccer_uefa_champs_league", name: "Champions League" },
+  uel: { key: "soccer_uefa_europa_league", name: "Europa League" },
+  mls: { key: "soccer_usa_mls", name: "MLS" },
+  championship: { key: "soccer_efl_champ", name: "Championship" },
 };
 
 // ─── Core Utilities ───
@@ -90,12 +124,14 @@ export async function fetchGameOdds(
         const h2h = b.markets.find((m: any) => m.key === "h2h");
         const homeOutcome = h2h?.outcomes.find((o: any) => o.name === event.home_team);
         const awayOutcome = h2h?.outcomes.find((o: any) => o.name === event.away_team);
+        const drawOutcome = h2h?.outcomes.find((o: any) => o.name === "Draw");
 
         return {
           homeMl: homeOutcome?.price || 0,
           awayMl: awayOutcome?.price || 0,
           homeImplied: americanToImplied(homeOutcome?.price || -100),
           awayImplied: americanToImplied(awayOutcome?.price || 100),
+          drawImplied: drawOutcome ? americanToImplied(drawOutcome.price) : 0,
         };
       });
 
@@ -103,7 +139,15 @@ export async function fetchGameOdds(
 
       const avgHomeImplied = bookmakers.reduce((s: number, b: any) => s + b.homeImplied, 0) / bookmakers.length;
       const avgAwayImplied = bookmakers.reduce((s: number, b: any) => s + b.awayImplied, 0) / bookmakers.length;
-      const [fairHome, fairAway] = removeVig([avgHomeImplied, avgAwayImplied]);
+      const avgDrawImplied = bookmakers.reduce((s: number, b: any) => s + b.drawImplied, 0) / bookmakers.length;
+
+      // For 3-way markets (soccer), remove vig across all 3 outcomes.
+      // For 2-way markets, avgDrawImplied === 0 so this is backwards-compatible.
+      const allProbs = avgDrawImplied > 0
+        ? [avgHomeImplied, avgAwayImplied, avgDrawImplied]
+        : [avgHomeImplied, avgAwayImplied];
+      const fair = removeVig(allProbs);
+      const [fairHome, fairAway] = fair;
 
       return {
         event: `${event.away_team} @ ${event.home_team}`,
@@ -124,6 +168,144 @@ export async function fetchGameOdds(
     return null;
   } catch (error) {
     console.error("[vegas] Game odds fetch error:", error);
+    return null;
+  }
+}
+
+/**
+ * Fetch spread odds for a specific team's upcoming game.
+ * Returns the spread and implied cover probability.
+ *
+ * @param subjectTeam — the team in the market question (the one covering/not covering).
+ *   We match this against both home and away, then return the spread from that team's perspective.
+ */
+export async function fetchSpreadOdds(
+  league: string,
+  subjectTeam: string,
+  apiKey?: string,
+): Promise<SpreadOdds | null> {
+  const key = apiKey || process.env.ODDS_API_KEY;
+  if (!key) return null;
+
+  const config = SPORT_CONFIG[league.toLowerCase()];
+  if (!config) return null;
+
+  try {
+    const url = `${ODDS_API_BASE}/sports/${config.key}/odds?apiKey=${key}&regions=us&markets=spreads&oddsFormat=american`;
+    const response = await fetch(url);
+    if (!response.ok) return null;
+
+    const events = await response.json();
+    const teamLower = subjectTeam.toLowerCase();
+
+    for (const event of events) {
+      const homeMatch = event.home_team.toLowerCase().includes(teamLower);
+      const awayMatch = event.away_team.toLowerCase().includes(teamLower);
+      if (!homeMatch && !awayMatch) continue;
+
+      const isHome = homeMatch;
+      const subjectName = isHome ? event.home_team : event.away_team;
+      const opponentName = isHome ? event.away_team : event.home_team;
+
+      const bookmakers = event.bookmakers.map((b: any) => {
+        const spreadMarket = b.markets.find((m: any) => m.key === "spreads");
+        const subjectOutcome = spreadMarket?.outcomes.find((o: any) => o.name === subjectName);
+        const opponentOutcome = spreadMarket?.outcomes.find((o: any) => o.name === opponentName);
+
+        return {
+          spread: subjectOutcome?.point ?? 0,
+          coverPrice: subjectOutcome?.price ?? -110,
+          noCoverPrice: opponentOutcome?.price ?? -110,
+        };
+      });
+
+      if (bookmakers.length === 0) continue;
+
+      const avgSpread = bookmakers.reduce((s: number, b: any) => s + b.spread, 0) / bookmakers.length;
+      const avgCoverImplied = bookmakers.reduce((s: number, b: any) => s + americanToImplied(b.coverPrice), 0) / bookmakers.length;
+      const avgNoCoverImplied = bookmakers.reduce((s: number, b: any) => s + americanToImplied(b.noCoverPrice), 0) / bookmakers.length;
+      const [fairCover, fairNoCover] = removeVig([avgCoverImplied, avgNoCoverImplied]);
+
+      return {
+        event: `${event.away_team} @ ${event.home_team}`,
+        homeTeam: event.home_team,
+        awayTeam: event.away_team,
+        spread: avgSpread,
+        coverImplied: fairCover,
+        noCoverImplied: fairNoCover,
+      };
+    }
+
+    return null;
+  } catch (error) {
+    console.error("[vegas] Spread odds fetch error:", error);
+    return null;
+  }
+}
+
+/**
+ * Fetch totals (over/under) odds for a specific game.
+ * Matches by team name and returns the line + vig-removed over/under probabilities.
+ */
+export async function fetchTotalsOdds(
+  league: string,
+  teamName: string,
+  apiKey?: string,
+): Promise<TotalsOdds | null> {
+  const key = apiKey || process.env.ODDS_API_KEY;
+  if (!key) return null;
+
+  const config = SPORT_CONFIG[league.toLowerCase()];
+  if (!config) return null;
+
+  try {
+    const url = `${ODDS_API_BASE}/sports/${config.key}/odds?apiKey=${key}&regions=us&markets=totals&oddsFormat=american`;
+    const response = await fetch(url);
+    if (!response.ok) return null;
+
+    const events = await response.json();
+    const teamLower = teamName.toLowerCase();
+
+    for (const event of events) {
+      const homeMatch = event.home_team.toLowerCase().includes(teamLower);
+      const awayMatch = event.away_team.toLowerCase().includes(teamLower);
+      if (!homeMatch && !awayMatch) continue;
+
+      const bookmakers = event.bookmakers
+        .map((b: any) => {
+          const totalsMarket = b.markets.find((m: any) => m.key === "totals");
+          const overOutcome = totalsMarket?.outcomes.find((o: any) => o.name === "Over");
+          const underOutcome = totalsMarket?.outcomes.find((o: any) => o.name === "Under");
+          if (!overOutcome || !underOutcome) return null;
+
+          return {
+            line: overOutcome.point ?? 0,
+            overPrice: overOutcome.price ?? -110,
+            underPrice: underOutcome.price ?? -110,
+          };
+        })
+        .filter(Boolean) as { line: number; overPrice: number; underPrice: number }[];
+
+      if (bookmakers.length === 0) continue;
+
+      const avgLine = bookmakers.reduce((s, b) => s + b.line, 0) / bookmakers.length;
+      const avgOverImplied = bookmakers.reduce((s, b) => s + americanToImplied(b.overPrice), 0) / bookmakers.length;
+      const avgUnderImplied = bookmakers.reduce((s, b) => s + americanToImplied(b.underPrice), 0) / bookmakers.length;
+      const [fairOver, fairUnder] = removeVig([avgOverImplied, avgUnderImplied]);
+
+      return {
+        event: `${event.away_team} @ ${event.home_team}`,
+        homeTeam: event.home_team,
+        awayTeam: event.away_team,
+        line: avgLine,
+        overImplied: fairOver,
+        underImplied: fairUnder,
+      };
+    }
+
+    return null;
+  } catch (error) {
+    console.error("[vegas] Totals odds fetch error:", error);
     return null;
   }
 }
