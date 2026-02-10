@@ -639,10 +639,48 @@ export function extractLeagueFromQuestion(question: string | undefined | null): 
     "lille", "nice", "lens", "rennes", "strasbourg",
   ];
 
+  // NCAAB teams — school names from all major conferences.
+  // Uses school names (not mascots) since market titles say "Will Purdue defeat Nebraska?"
+  const ncaabTeams = [
+    // SEC
+    "alabama", "arkansas", "auburn", "florida", "gators",
+    "georgia", "kentucky", "lsu",
+    "mississippi state", "ole miss", "missouri", "mizzou",
+    "oklahoma", "south carolina", "tennessee",
+    "texas a&m", "texas", "vanderbilt",
+    // Big Ten
+    "illinois", "indiana", "iowa", "maryland",
+    "michigan state", "michigan", "minnesota", "nebraska",
+    "northwestern", "ohio state", "oregon",
+    "penn state", "purdue", "rutgers",
+    "ucla", "usc", "wisconsin",
+    // Big 12
+    "arizona state", "arizona", "baylor", "byu", "brigham young",
+    "cincinnati", "colorado", "houston",
+    "iowa state", "kansas state", "kansas", "oklahoma state",
+    "tcu", "texas tech", "ucf", "utah", "west virginia",
+    // ACC
+    "boston college", "clemson", "duke", "florida state",
+    "georgia tech", "louisville", "nc state", "north carolina",
+    "notre dame", "pittsburgh", "pitt", "smu", "stanford",
+    "syracuse", "virginia tech", "virginia", "wake forest",
+    "california", "cal berkeley",
+    // Big East
+    "butler", "uconn", "connecticut", "creighton", "depaul",
+    "georgetown", "marquette", "providence", "seton hall",
+    "st. john's", "villanova", "xavier",
+    // Notable mid-majors
+    "gonzaga", "memphis", "san diego state", "dayton",
+    "saint mary's", "wichita state", "boise state",
+  ];
+
   if (nbaTeams.some((t) => lower.includes(t))) return "nba";
   if (nflTeams.some((t) => lower.includes(t))) return "nfl";
   if (mlbTeams.some((t) => lower.includes(t))) return "mlb";
   if (nhlTeams.some((t) => lower.includes(t))) return "nhl";
+  // NCAAB before soccer — school names are distinctive enough, and pro team checks above
+  // catch any mascot conflicts (e.g. "bears" → NFL, "bruins" → NHL)
+  if (ncaabTeams.some((t) => lower.includes(t))) return "ncaab";
   // Soccer team detection — check before generic "soccer" / "football" keywords
   if (eplTeams.some((t) => lower.includes(t))) return "epl";
   if (laligaTeams.some((t) => lower.includes(t))) return "laliga";
