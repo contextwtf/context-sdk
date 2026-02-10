@@ -27,6 +27,8 @@ export interface AdaptiveMmOptions {
   maxSkewCents: number;
   /** Min mid-move in cents before re-quoting (e.g., 1). */
   requoteDeltaCents: number;
+  /** Minimum FV confidence to quote. Markets below this are skipped. Default: 0.3. */
+  minConfidence?: number;
   /** Pluggable fair value source. Overrides fairValueCents when provided. */
   fairValueProvider?: FairValueProvider;
 }
@@ -61,6 +63,7 @@ export class AdaptiveMmStrategy implements Strategy {
   private readonly skewPerContract: number;
   private readonly maxSkewCents: number;
   private readonly requoteDeltaCents: number;
+  private readonly minConfidence: number;
   private readonly fairValueProvider?: FairValueProvider;
 
   private lastQuotes = new Map<string, QuoteState>();
@@ -75,6 +78,7 @@ export class AdaptiveMmStrategy implements Strategy {
     this.skewPerContract = options.skewPerContract;
     this.maxSkewCents = options.maxSkewCents;
     this.requoteDeltaCents = options.requoteDeltaCents;
+    this.minConfidence = options.minConfidence ?? 0.3;
     this.fairValueProvider = options.fairValueProvider;
   }
 
@@ -123,6 +127,14 @@ export class AdaptiveMmStrategy implements Strategy {
       console.log(
         `[adaptive-mm] FV from ${fvSource}: ${yesFV}¢ (confidence: ${fvConfidence.toFixed(2)})`,
       );
+    }
+
+    // 1b. Skip markets where FV confidence is below threshold
+    if (fvConfidence < this.minConfidence && fvSource !== "static") {
+      console.log(
+        `[adaptive-mm] SKIP ${market.id.slice(0, 8)}...: confidence ${fvConfidence.toFixed(2)} < ${this.minConfidence}`,
+      );
+      return [{ type: "no_action", reason: `Low confidence: ${fvConfidence.toFixed(2)} < ${this.minConfidence}` }];
     }
 
     // 2. Calculate inventory skew from net YES position

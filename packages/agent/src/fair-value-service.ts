@@ -243,6 +243,7 @@ export class FairValueService {
     // 4. Call provider
     this.callsInFlight++;
     this.lastCallTime = now;
+    let wasInstantSkip = false;
 
     try {
       const estimate = await Promise.race([
@@ -252,6 +253,12 @@ export class FairValueService {
 
       // Success — clear cooldown, cache result, reset flow state
       this.timeoutHistory.delete(marketId);
+
+      // If provider returned confidence 0 (e.g., sports market skip), don't
+      // count against rate limit — it was an instant return, not a real call.
+      if (estimate.confidence === 0) {
+        wasInstantSkip = true;
+      }
 
       const ttlMs = estimate.cacheTtlMs ?? 3_600_000; // Default: 1 hour
 
@@ -321,7 +328,11 @@ export class FairValueService {
       }
     } finally {
       this.callsInFlight--;
-      this.lastCallTime = Date.now();
+      // Don't penalize rate limit for instant skips (e.g., sports markets
+      // returning confidence 0 without hitting an API)
+      if (!wasInstantSkip) {
+        this.lastCallTime = Date.now();
+      }
     }
   }
 

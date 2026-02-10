@@ -121,6 +121,7 @@ async function main() {
       skewPerContract: 0.1,
       maxSkewCents: 5,
       requoteDeltaCents: 1,
+      minConfidence: 0.3, // Skip sports markets (confidence=0) and low-quality estimates
       fairValueProvider: gemini, // Still passed for backwards compat — Phase 2 will prefer snapshot.fairValue
     }),
     fairValue: fairValueConfig,
