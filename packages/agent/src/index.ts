@@ -74,6 +74,10 @@ export {
   SportsMmStrategy,
   type SportsMmOptions,
 } from "./strategies/sports-mm.js";
+export {
+  FavoritesDipStrategy,
+  type FavoritesDipOptions,
+} from "./strategies/favorites-dip.js";
 
 // Signals (sports data enrichment)
 export * as espn from "./signals/espn.js";

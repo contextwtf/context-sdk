@@ -43,6 +43,10 @@ export interface VegasFairValueResult extends FairValueEstimate {
   margin?: number;
   period?: number;
   vegasImplied?: number;
+  /** Signed point differential from subject team's perspective. Negative = behind. */
+  pointDiff?: number;
+  /** True if the subject team (first team in title) is the home team. */
+  subjectIsHome?: boolean;
   /** Non-null if this is a spread market. */
   spread?: number;
   /** Non-null if this is a totals market. */
@@ -268,7 +272,7 @@ export class VegasFairValue implements FairValueProvider {
 
     // Route by game state
     if (!game || game.status === "scheduled") {
-      return this.preGame(vegasImplied, title);
+      return this.preGame(vegasImplied, title, subjectIsHome);
     }
 
     if (game.status === "final") {
@@ -284,32 +288,35 @@ export class VegasFairValue implements FairValueProvider {
 
   // ─── Game State Handlers ───
 
-  private preGame(vegasImplied: number | undefined, title: string): VegasFairValueResult {
+  private preGame(vegasImplied: number | undefined, title: string, subjectIsHome?: boolean): VegasFairValueResult {
     if (vegasImplied !== undefined) {
       const yesCents = Math.max(1, Math.min(99, Math.round(vegasImplied * 100)));
       console.log(
         `[vegas-fv] PRE-GAME: ${title.slice(0, 50)}... → Vegas=${(vegasImplied * 100).toFixed(1)}% → FV=${yesCents}¢`,
       );
-      return { yesCents, confidence: 0.8, gameState: "pre_game", vegasImplied };
+      return { yesCents, confidence: 0.8, gameState: "pre_game", vegasImplied, pointDiff: 0, subjectIsHome };
     }
 
     console.log(`[vegas-fv] PRE-GAME (no Vegas): ${title.slice(0, 50)}... → FV=50¢`);
-    return { yesCents: 50, confidence: 0.3, gameState: "pre_game" };
+    return { yesCents: 50, confidence: 0.3, gameState: "pre_game", pointDiff: 0, subjectIsHome };
   }
 
   private finalGame(game: UpcomingGame, subjectIsHome: boolean, league?: string): VegasFairValueResult {
     const homeScore = game.homeScore ?? 0;
     const awayScore = game.awayScore ?? 0;
+    const subjectScore = subjectIsHome ? homeScore : awayScore;
+    const opponentScore = subjectIsHome ? awayScore : homeScore;
+    const pointDiff = subjectScore - opponentScore;
 
     if (homeScore === awayScore) {
       // In soccer, a draw at full time = "defeat" market resolves NO
       const isSoccer = SOCCER_LEAGUES.has((league ?? "").toLowerCase());
       if (isSoccer) {
         console.log(`[vegas-fv] FINAL DRAW: ${game.homeTeam} ${homeScore}-${awayScore} ${game.awayTeam} → NO (draw)`);
-        return { yesCents: 1, confidence: 1.0, gameState: "final" };
+        return { yesCents: 1, confidence: 1.0, gameState: "final", pointDiff, subjectIsHome };
       }
       // Non-soccer ties (rare — usually goes to OT)
-      return { yesCents: 50, confidence: 0.5, gameState: "final" };
+      return { yesCents: 50, confidence: 0.5, gameState: "final", pointDiff, subjectIsHome };
     }
 
     const subjectWon = subjectIsHome
@@ -324,6 +331,8 @@ export class VegasFairValue implements FairValueProvider {
       yesCents: subjectWon ? 99 : 1,
       confidence: 1.0,
       gameState: "final",
+      pointDiff,
+      subjectIsHome,
     };
   }
 
@@ -407,6 +416,8 @@ export class VegasFairValue implements FairValueProvider {
       margin,
       period,
       vegasImplied,
+      pointDiff,
+      subjectIsHome,
     };
   }
 
