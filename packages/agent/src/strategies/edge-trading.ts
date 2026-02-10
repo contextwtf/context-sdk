@@ -2,12 +2,12 @@
  * Edge Trading Strategy — Price Corrector
  *
  * Directional trading strategy that compares LLM fair value to market price
- * and aggressively corrects mispricings by sweeping the book.
+ * and aggressively corrects mispricings.
  *
  * Key behaviors:
- * - SELL YES into overpriced bids (not BUY NO — which doesn't cross)
- * - BUY YES at underpriced asks
- * - Sweeps all mispriced levels, not just top-of-book
+ * - Places single large orders at FV ± minEdge to sweep all mispriced liquidity
+ * - Unfilled portion rests as standing order, catching new MM quotes between cycles
+ * - SELL YES when market overpriced, BUY YES when underpriced
  * - No cooldowns — corrects every cycle to keep prices in line
  * - Requires minted inventory (complete sets) to sell both sides
  */
@@ -32,10 +32,6 @@ export interface EdgeTradingOptions {
   minEdgeCents?: number;
   /** Minimum confidence from FV provider to trade. Default: 0.6. */
   minConfidence?: number;
-  /** Base order size in contracts. Default: 3. */
-  baseSize?: number;
-  /** Maximum order size per level. Default: 10. */
-  maxOrderSize?: number;
   /** Maximum net position per market (contracts, each direction). Default: 30. */
   maxPositionPerMarket?: number;
 }
@@ -49,8 +45,6 @@ export class EdgeTradingStrategy implements Strategy {
   private readonly provider: FairValueProvider;
   private readonly minEdgeCents: number;
   private readonly minConfidence: number;
-  private readonly baseSize: number;
-  private readonly maxOrderSize: number;
   private readonly maxPositionPerMarket: number;
 
   constructor(options: EdgeTradingOptions) {
@@ -58,9 +52,7 @@ export class EdgeTradingStrategy implements Strategy {
     this.provider = options.fairValueProvider;
     this.minEdgeCents = options.minEdgeCents ?? 5;
     this.minConfidence = options.minConfidence ?? 0.6;
-    this.baseSize = options.baseSize ?? 3;
-    this.maxOrderSize = options.maxOrderSize ?? 10;
-    this.maxPositionPerMarket = options.maxPositionPerMarket ?? 30;
+    this.maxPositionPerMarket = options.maxPositionPerMarket ?? 500;
   }
 
   async selectMarkets(): Promise<MarketSelector> {
@@ -109,7 +101,7 @@ export class EdgeTradingStrategy implements Strategy {
     const actions: Action[] = [];
 
     // Cancel our stale open orders for this market — they're from previous
-    // cycles and may be at outdated prices. Fresh orders will be placed below.
+    // cycles and may be at outdated FV. Fresh orders will be placed below.
     const staleOrders = state.openOrders.filter(o => o.marketId === marketId);
     for (const order of staleOrders) {
       actions.push({ type: "cancel_order", nonce: order.nonce });
@@ -124,88 +116,69 @@ export class EdgeTradingStrategy implements Strategy {
       : orderbook.bids[0] ? Math.round(orderbook.bids[0].price)
       : orderbook.asks[0] ? Math.round(orderbook.asks[0].price) : 0;
 
-    // ── Sweep overpriced bids: SELL YES ──
-    // Bids are sorted descending (highest first). Sell into any bid where
-    // bidPrice - FV >= minEdge. This directly crosses with YES bids.
-    let sellCapacity = this.maxPositionPerMarket + netPosition; // how much more YES we can sell
-    for (const level of orderbook.bids) {
-      if (sellCapacity <= 0) break;
-      const bidCents = Math.round(level.price);
-      const edge = bidCents - fv.yesCents;
-      if (edge < this.minEdgeCents) break; // bids sorted desc, no more edge below
+    // ── SELL YES: market overpriced ──
+    // Place one large sell order at FV + minEdge. The matching engine will
+    // fill against all bids above this price. Unfilled portion rests as an
+    // ask, catching any new bids that come in between cycles.
+    const minSellPrice = fv.yesCents + this.minEdgeCents;
+    const sellCapacity = this.maxPositionPerMarket + netPosition;
+    const bestBid = orderbook.bids[0]?.price ?? 0;
 
-      const size = Math.min(
-        this.sizeForEdge(edge),
-        Math.floor(level.size),
-        sellCapacity,
-      );
-      if (size <= 0) continue;
-
-      sellCapacity -= size;
+    if (sellCapacity > 0 && bestBid >= minSellPrice) {
       actions.push({
         type: "place_order",
         marketId,
         outcome: "yes",
         side: "sell",
-        priceCents: bidCents,
-        size,
+        priceCents: Math.max(1, fv.yesCents + this.minEdgeCents),
+        size: sellCapacity,
       });
+
+      console.log(
+        `[edge-trader] ${title}... (${id}): FV=${fv.yesCents}¢ (${conf}),`,
+        `Market mid=${mid}¢ → SELL YES ${sellCapacity} @ ${fv.yesCents + this.minEdgeCents}¢`,
+      );
     }
 
-    // ── Sweep underpriced asks: BUY YES ──
-    // Asks are sorted ascending (lowest first). Buy any ask where
-    // FV - askPrice >= minEdge.
-    let buyCapacity = this.maxPositionPerMarket - netPosition; // how much more YES we can buy
-    for (const level of orderbook.asks) {
-      if (buyCapacity <= 0) break;
-      const askCents = Math.round(level.price);
-      const edge = fv.yesCents - askCents;
-      if (edge < this.minEdgeCents) break; // asks sorted asc, no more edge above
+    // ── BUY YES: market underpriced ──
+    // Place one large buy order at FV - minEdge. The matching engine will
+    // fill against all asks below this price. Unfilled portion rests as a
+    // bid, catching any new asks that come in between cycles.
+    const maxBuyPrice = fv.yesCents - this.minEdgeCents;
+    const buyCapacity = this.maxPositionPerMarket - netPosition;
+    const bestAsk = orderbook.asks[0]?.price ?? 100;
 
-      const size = Math.min(
-        this.sizeForEdge(edge),
-        Math.floor(level.size),
-        buyCapacity,
-      );
-      if (size <= 0) continue;
-
-      buyCapacity -= size;
+    if (buyCapacity > 0 && bestAsk <= maxBuyPrice) {
       actions.push({
         type: "place_order",
         marketId,
         outcome: "yes",
         side: "buy",
-        priceCents: askCents,
-        size,
+        priceCents: Math.min(99, fv.yesCents - this.minEdgeCents),
+        size: buyCapacity,
       });
-    }
 
-    // Log summary
-    if (actions.length > 0) {
-      const sellActions = actions.filter(a => a.type === "place_order" && (a as any).side === "sell");
-      const buyActions = actions.filter(a => a.type === "place_order" && (a as any).side === "buy");
-      const parts: string[] = [];
-      if (sellActions.length > 0) {
-        const totalSell = sellActions.reduce((s, a) => s + ((a as any).size ?? 0), 0);
-        const topPrice = (sellActions[0] as any).priceCents;
-        parts.push(`SELL YES ${totalSell} (top @ ${topPrice}¢)`);
-      }
-      if (buyActions.length > 0) {
-        const totalBuy = buyActions.reduce((s, a) => s + ((a as any).size ?? 0), 0);
-        const topPrice = (buyActions[0] as any).priceCents;
-        parts.push(`BUY YES ${totalBuy} (top @ ${topPrice}¢)`);
-      }
       console.log(
         `[edge-trader] ${title}... (${id}): FV=${fv.yesCents}¢ (${conf}),`,
-        `Market mid=${mid}¢ →`,
-        parts.join(" + "),
+        `Market mid=${mid}¢ → BUY YES ${buyCapacity} @ ${fv.yesCents - this.minEdgeCents}¢`,
       );
     }
 
-    if (actions.length === 0) {
+    if (actions.filter(a => a.type === "place_order").length === 0) {
+      // Log why we're not trading — helps debug stuck markets
+      const reasons: string[] = [];
+      if (sellCapacity <= 0) reasons.push(`sell capped (pos=${netPosition})`);
+      else if (bestBid < minSellPrice) reasons.push(`no sell edge (bid=${bestBid}¢ < ${minSellPrice}¢)`);
+      if (buyCapacity <= 0) reasons.push(`buy capped (pos=${netPosition})`);
+      else if (bestAsk > maxBuyPrice) reasons.push(`no buy edge (ask=${bestAsk}¢ > ${maxBuyPrice}¢)`);
+
+      console.log(
+        `[edge-trader] ${title}... (${id}): FV=${fv.yesCents}¢ (${conf}), mid=${mid}¢ → NO TRADE: ${reasons.join(", ")}`,
+      );
+
       return [{
         type: "no_action",
-        reason: `No edge: FV=${fv.yesCents}¢, mid=${mid}¢ (need ${this.minEdgeCents}¢)`,
+        reason: `No trade: ${reasons.join(", ")}`,
       }];
     }
 
@@ -213,12 +186,6 @@ export class EdgeTradingStrategy implements Strategy {
   }
 
   // ─── Helpers ───
-
-  /** Compute order size scaled by edge magnitude, capped at maxOrderSize. */
-  private sizeForEdge(edgeCents: number): number {
-    const edgeMultiple = Math.floor(edgeCents / this.minEdgeCents);
-    return Math.min(edgeMultiple * this.baseSize, this.maxOrderSize);
-  }
 
   /**
    * Get net YES position for a market from agent state.

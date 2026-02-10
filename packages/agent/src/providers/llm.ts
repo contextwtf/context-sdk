@@ -206,11 +206,15 @@ export class LlmFairValue implements FairValueProvider {
     }
 
     // Score-based invalidation for live games
-    if (
-      liveGame?.status === "in_progress" &&
-      entry.homeScore !== undefined &&
-      entry.awayScore !== undefined
-    ) {
+    if (liveGame?.status === "in_progress") {
+      if (entry.homeScore === undefined || entry.awayScore === undefined) {
+        // Game just went live — cached entry is from pre-game, invalidate immediately
+        console.log(
+          `[llm-fv] Game went live ${marketId.slice(0, 8)}..., re-evaluating with live data`,
+        );
+        this.cache.delete(marketId);
+        return null;
+      }
       if (
         entry.homeScore !== liveGame.homeScore ||
         entry.awayScore !== liveGame.awayScore
@@ -396,37 +400,73 @@ VEGAS ODDS:
 CURRENT MARKET: Best bid ${bidCents}¢, Best ask ${askCents}¢ (midpoint: ${mid}¢)`);
     }
 
-    // Reasoning framework
+    // Reasoning framework — weight Vegas vs score based on game progress
+    const period = ctx.liveGame?.period ?? 0;
+    const isEarlyGame = isLive && period <= 1;
+    const isMidGame = isLive && period === 2;
+    const isLateGame = isLive && period >= 3;
+
+    let step1: string;
+    let step2: string;
+    let step3: string;
+
+    if (!isLive) {
+      step1 = ctx.vegasOdds
+        ? "• Use Vegas implied probability as your anchor — it's the strongest pre-game signal."
+        : "• Use team records and recent form to set an initial estimate. If no data, start at 50%.";
+      step2 = `• ESPN team stats (record, PPG, recent form, streak)
+• Oracle evidence (if available and relevant)
+• Current market price (what other traders think)`;
+      step3 = `• Home court advantage (NBA: ~3-4 pts, worth ~5-7% for evenly matched teams)
+• Recent form and momentum (hot/cold streaks)
+• Strength of schedule context`;
+    } else if (isEarlyGame) {
+      // Q1: Vegas is the primary anchor, score is noise
+      step1 = ctx.vegasOdds
+        ? `• START from Vegas implied probability — it is your PRIMARY anchor in Q1.
+• The score this early is mostly noise. A 5-point lead in Q1 shifts win probability only ~3-5%.`
+        : "• Use team records and quality as your anchor. Early game score shifts are small.";
+      step2 = `• Vegas odds are the strongest signal in Q1 (~80% weight)
+• Current score adjusts Vegas by only a few percent (e.g., down 5 in Q1 = Vegas minus ~4%)
+• Team quality and home court matter more than the scoreboard right now`;
+      step3 = `• Stay close to the Vegas line — do NOT overreact to early scoring runs
+• Adjust Vegas by at most ±8% for the current score in Q1
+• Home court adds ~2-3% on top of Vegas`;
+    } else if (isMidGame) {
+      // Q2: Blend Vegas and score roughly 50/50
+      step1 = `• Blend Vegas odds and score-based benchmarks roughly equally.
+• Use the WIN PROBABILITY BENCHMARKS as a reference, but anchor partially on Vegas.`;
+      step2 = `• Vegas odds still carry significant weight (~50%) in Q2
+• Score margin starts to matter more — use the benchmarks table as a guide
+• A 10-point deficit in Q2 is meaningful but not decisive`;
+      step3 = `• Your estimate should be between the Vegas implied probability and the score-based benchmark
+• Stronger teams can recover from Q2 deficits — adjust ~3-5% for team quality
+• Home court adds ~2-3% in close games`;
+    } else {
+      // Q3+/Q4: Score dominates
+      step1 = "• Use the WIN PROBABILITY BENCHMARKS above as your anchor. Find the row matching the current deficit/lead and quarter.";
+      step2 = `• START from the benchmark win probability for the current score margin and quarter
+• Adjust slightly for team quality (better teams recover from deficits more often)
+• Pre-game Vegas odds are secondary context only — the live score dominates`;
+      step3 = `• A losing team's probability should be BELOW 50% unless the deficit is tiny (1-2 pts)
+• Stronger teams get +3-5% adjustment vs the benchmark, weaker teams get -3-5%
+• Home court adds ~2-3% in close games
+• NEVER return above 50% for a team that is losing by 5+ points`;
+    }
+
     parts.push(`
 YOUR TASK — Estimate the probability that YES wins this market.
 
 Follow this 3-step process:
 
 STEP 1: SET YOUR PRIOR
-${isLive
-  ? "• Use the WIN PROBABILITY BENCHMARKS above as your anchor. Find the row matching the current deficit/lead and quarter."
-  : ctx.vegasOdds
-    ? "• Use Vegas implied probability as your anchor — it's the strongest pre-game signal."
-    : "• Use team records and recent form to set an initial estimate. If no data, start at 50%."}
+${step1}
 
 STEP 2: INCORPORATE SIGNALS
-${isLive
-  ? `• START from the benchmark win probability for the current score margin and quarter
-• Adjust slightly for team quality (better teams recover from deficits more often)
-• Pre-game Vegas odds are secondary context only — the live score dominates`
-  : `• ESPN team stats (record, PPG, recent form, streak)
-• Oracle evidence (if available and relevant)
-• Current market price (what other traders think)`}
+${step2}
 
 STEP 3: APPLY ADJUSTMENTS
-${isLive
-  ? `• A losing team's probability should be BELOW 50% unless the deficit is tiny (1-2 pts)
-• Stronger teams get +3-5% adjustment vs the benchmark, weaker teams get -3-5%
-• Home court adds ~2-3% in close games
-• NEVER return above 50% for a team that is losing by 5+ points`
-  : `• Home court advantage (NBA: ~3-4 pts, worth ~5-7% for evenly matched teams)
-• Recent form and momentum (hot/cold streaks)
-• Strength of schedule context`}
+${step3}
 
 Respond with ONLY this JSON:
 {

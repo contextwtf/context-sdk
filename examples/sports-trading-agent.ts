@@ -125,25 +125,23 @@ async function main() {
     league: "nba",
   });
 
-  // Edge trading strategy — sweeps mispriced levels
+  // Edge trading strategy — places single large orders at FV ± minEdge
   const strategy = new EdgeTradingStrategy({
     markets: { type: "search", query: "", status: "active" },
     fairValueProvider: llmFairValue,
     minEdgeCents: 5,          // Need 5¢+ edge to trade
     minConfidence: 0.6,       // Need medium+ confidence
-    baseSize: 5,              // 5 contracts per minEdge increment
-    maxOrderSize: 25,         // Up to 25 contracts per level
-    maxPositionPerMarket: 500, // Room to push price to FV
+    maxPositionPerMarket: 2000, // Room to push price to FV
   });
 
   const agent = new AgentRuntime({
     trader: traderConfig,
     strategy,
     risk: {
-      maxPositionSize: 5000,  // Total across all markets
+      maxPositionSize: 15000, // Total across all markets
       maxOpenOrders: 500,
-      maxOrderSize: 25,
-      maxLoss: -100,
+      maxOrderSize: 5000,     // No practical limit — position limits are the real cap
+      maxLoss: -500,
     },
     intervalMs: 30_000,       // 30s cycles (LLM calls take time)
     dryRun,
@@ -152,7 +150,7 @@ async function main() {
 
   console.log(`Starting Sports Trading Agent (dryRun=${dryRun})...`);
   console.log("Strategy: LLM edge trading (Haiku + ESPN + Vegas)");
-  console.log(`Config: minEdge=5¢, minConf=60%, baseSize=3, maxPos=50`);
+  console.log(`Config: minEdge=5¢, minConf=60%, maxPos=500 (single large orders)`);
   if (process.env.ODDS_API_KEY) {
     console.log("Vegas odds: enabled");
   } else {

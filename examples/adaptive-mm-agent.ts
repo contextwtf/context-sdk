@@ -127,9 +127,9 @@ async function main() {
     strategy: new AdaptiveMmStrategy({
       markets: { type: "search", query: "", status: "active" },
       fairValueCents: 50,
-      levels: 5,
+      levels: 8,
       levelSpacingCents: 2,
-      levelSize: 20,
+      levelSize: 40,
       baseSpreadCents: 2,
       skewPerContract: 0.1,
       maxSkewCents: 5,

@@ -175,6 +175,9 @@ export class AgentRuntime {
         return;
       }
 
+      // 7b. Ensure sell inventory — mint complete sets if needed
+      await this.ensureSellInventory(riskResult.allowed, state);
+
       for (const action of riskResult.allowed) {
         if (action.type === "no_action") continue;
         await this.executeAction(action);
@@ -290,9 +293,29 @@ export class AgentRuntime {
         // Normalize: API wraps some responses
         const market = (rawMarket as any).market ?? rawMarket;
         const quotes = Array.isArray(rawQuotes) ? rawQuotes : [rawQuotes];
-        const orderbook = (rawOrderbook as any).bids
+        const rawBook = (rawOrderbook as any).bids
           ? rawOrderbook
           : { bids: [], asks: [] };
+
+        // IMPORTANT: The orderbook API returns the book from the NO
+        // (outcomeIndex 0) perspective. Convert to YES perspective so
+        // strategies see YES bids/asks directly.
+        //   YES bids = 100 - NO asks (sorted descending by price)
+        //   YES asks = 100 - NO bids (sorted ascending by price)
+        const orderbook = {
+          bids: (rawBook as any).asks
+            ?.map((level: any) => ({
+              ...level,
+              price: 100 - level.price,
+            }))
+            .sort((a: any, b: any) => b.price - a.price) ?? [],
+          asks: (rawBook as any).bids
+            ?.map((level: any) => ({
+              ...level,
+              price: 100 - level.price,
+            }))
+            .sort((a: any, b: any) => a.price - b.price) ?? [],
+        };
 
         // Oracle: API returns { oracle: {...} | null }
         const oracleData = (rawOracle as any).oracle ?? rawOracle;
@@ -388,6 +411,66 @@ export class AgentRuntime {
       }));
 
     return { portfolio: normalizedPortfolio, openOrders, balance };
+  }
+
+  /**
+   * Check if the agent has enough YES tokens for pending sell orders.
+   * If not, mint complete sets to cover the deficit.
+   */
+  private async ensureSellInventory(
+    actions: Action[],
+    state: AgentState,
+  ): Promise<void> {
+    if (!this.trader || this.dryRun) return;
+
+    // Collect sell-YES size needed per market
+    const sellByMarket = new Map<string, number>();
+    for (const action of actions) {
+      if (
+        action.type === "place_order" &&
+        action.side === "sell" &&
+        action.outcome === "yes"
+      ) {
+        sellByMarket.set(
+          action.marketId,
+          (sellByMarket.get(action.marketId) ?? 0) + action.size,
+        );
+      }
+    }
+
+    if (sellByMarket.size === 0) return;
+
+    // Check YES balance per market from portfolio
+    const yesBalance = new Map<string, number>();
+    const positions = state.portfolio?.positions;
+    if (positions && Array.isArray(positions)) {
+      for (const pos of positions) {
+        if (pos.outcome === "yes") {
+          yesBalance.set(
+            pos.marketId,
+            (yesBalance.get(pos.marketId) ?? 0) + pos.size,
+          );
+        }
+      }
+    }
+
+    // Mint deficit for each market
+    for (const [marketId, needed] of sellByMarket) {
+      const have = yesBalance.get(marketId) ?? 0;
+      const deficit = needed - have;
+      if (deficit <= 0) continue;
+
+      // Add a buffer so we don't mint every single cycle
+      const mintAmount = deficit + 50;
+      try {
+        console.log(
+          `[agent] Minting ${mintAmount} sets for ${marketId.slice(0, 8)}... (have ${Math.round(have)}, need ${needed})`,
+        );
+        await this.trader.mintCompleteSets(marketId, mintAmount);
+      } catch (err) {
+        this.logger.logError(err, `minting ${mintAmount} sets for ${marketId.slice(0, 8)}`);
+      }
+    }
   }
 
   private async executeAction(action: Action): Promise<void> {
