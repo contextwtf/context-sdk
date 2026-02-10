@@ -215,19 +215,10 @@ export class SportsMmStrategy implements Strategy {
     const gameState: GameState =
       (snapshot.fairValue?.metadata?.gameState as GameState) ?? fvResult.gameState;
 
-    // Final game — pull all quotes
+    // Final game — buy dollars for 99 cents until market resolves
     if (gameState === "final") {
-      const actions: Action[] = [];
-      const marketOrders = state.openOrders.filter((o) => o.marketId === market.id);
-      for (const order of marketOrders) {
-        actions.push({ type: "cancel_order", nonce: order.nonce });
-      }
-      if (marketOrders.length > 0) {
-        console.log(
-          `[sports-mm] FINAL — pulling ${marketOrders.length} quotes for ${market.id.slice(0, 8)}...`,
-        );
-      }
-      return actions.length > 0 ? actions : [{ type: "no_action", reason: "Game final, no quotes" }];
+      const yesFV = Math.round(snapshot.fairValue?.yesCents ?? fvResult.yesCents);
+      return this.finalGameQuotes(market.id, yesFV, fvResult.confidence ?? 1, state);
     }
 
     // Prefer service-computed FV if available, fall back to provider
@@ -292,6 +283,59 @@ export class SportsMmStrategy implements Strategy {
     // Track state
     this.lastQuotes.set(market.id, { fairValue: yesFV, skew, gameState });
 
+    return actions;
+  }
+
+  // ─── Final Game — Resolution Bidding ───
+
+  /**
+   * Post-game: outcome is known, market hasn't resolved yet.
+   * Buy the winning side at 99¢/98¢/97¢ — buying dollars for ~99 cents.
+   * Near-zero risk since we know who won.
+   */
+  private finalGameQuotes(
+    marketId: string,
+    yesFV: number,
+    confidence: number,
+    state: AgentState,
+  ): Action[] {
+    const actions: Action[] = [];
+
+    // Cancel any existing in-game quotes first
+    const marketOrders = state.openOrders.filter((o) => o.marketId === marketId);
+    for (const order of marketOrders) {
+      actions.push({ type: "cancel_order", nonce: order.nonce });
+    }
+
+    // If outcome is uncertain (draw going to OT, etc.), just pull quotes
+    if (confidence < 0.9 || (yesFV > 5 && yesFV < 95)) {
+      if (marketOrders.length > 0) {
+        console.log(`[sports-mm] FINAL (uncertain) — pulling quotes for ${marketId.slice(0, 8)}...`);
+      }
+      return actions.length > 0 ? actions : [{ type: "no_action", reason: "Game final, uncertain outcome" }];
+    }
+
+    // Outcome is known — bid aggressively for the winning side
+    const winningOutcome: "yes" | "no" = yesFV >= 95 ? "yes" : "no";
+    const bidPrices = [99, 98, 97];
+    const bidSize = 100; // large size since risk is near-zero
+
+    for (const price of bidPrices) {
+      actions.push({
+        type: "place_order",
+        marketId,
+        outcome: winningOutcome,
+        side: "buy",
+        priceCents: price,
+        size: bidSize,
+      });
+    }
+
+    console.log(
+      `[sports-mm] FINAL — buying ${winningOutcome.toUpperCase()} at 97-99¢ for ${marketId.slice(0, 8)}...`,
+    );
+
+    this.lastQuotes.set(marketId, { fairValue: yesFV, skew: 0, gameState: "final" });
     return actions;
   }
 
