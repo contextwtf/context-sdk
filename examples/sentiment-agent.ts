@@ -1,39 +1,35 @@
 /**
- * Sports Trading Agent — LLM-powered price corrector for sports markets.
+ * Sentiment Agent — general-purpose LLM trader for any market type.
  *
- * Uses Claude Haiku to evaluate sports prediction markets, enriched with
- * ESPN team stats and Vegas odds. Aggressively corrects mispricings by
- * sweeping the book — selling YES into overpriced bids and buying YES
- * at underpriced asks.
+ * Uses Claude Haiku to reason about market questions and oracle evidence,
+ * then trades directionally via EdgeTradingStrategy. Unlike the sports
+ * trading agent, this is NOT sports-specific — works for politics, crypto,
+ * entertainment, tech, geopolitics, etc.
  *
- * Mints complete sets on startup so it has inventory to sell both sides.
+ * No ESPN or Vegas enrichment — just the market question, description,
+ * oracle evidence, and current price. Simple prompt, general reasoning.
  *
  * Env vars:
  *   ANTHROPIC_API_KEY=sk-ant-...   (required)
  *   CONTEXT_API_KEY=ctx_pk_...     (required for live mode)
  *   CONTEXT_PRIVATE_KEY=0x...      (required for live mode)
- *   ODDS_API_KEY=...               (optional — Vegas odds enrichment)
  *   DRY_RUN=false                  (default: true)
  *   MINT_AMOUNT=50                 (complete sets per market, default: 50)
  *
  * Usage:
- *   npx tsx examples/sports-trading-agent.ts                    # dry run
- *   DRY_RUN=false npx tsx examples/sports-trading-agent.ts      # live
+ *   npx tsx examples/sentiment-agent.ts                    # dry run
+ *   DRY_RUN=false npx tsx examples/sentiment-agent.ts      # live
  */
 
 import {
   AgentRuntime,
   EdgeTradingStrategy,
-  LlmFairValue,
+  SentimentFairValue,
   type FairValueServiceOptions,
 } from "@context-markets/agent";
 import { ContextClient, ContextTrader } from "@context-markets/sdk";
 import type { Hex } from "viem";
 
-/**
- * Mint complete sets so the trader has YES + NO tokens to sell.
- * Checks existing balances first and only mints the delta.
- */
 async function ensureInventory(trader: ContextTrader, targetPerMarket: number) {
   console.log(`[setup] Ensuring ${targetPerMarket} sets per active market...`);
 
@@ -46,9 +42,6 @@ async function ensureInventory(trader: ContextTrader, targetPerMarket: number) {
     return;
   }
 
-  console.log(`[setup] Found ${markets.length} active markets`);
-
-  // Check existing portfolio
   const rawPortfolio = await trader.getMyPortfolio() as any;
   const positions: any[] = rawPortfolio.positions ?? rawPortfolio.portfolio ?? [];
   const positionsByMarket = new Map<string, number>();
@@ -62,31 +55,16 @@ async function ensureInventory(trader: ContextTrader, targetPerMarket: number) {
   for (const market of markets) {
     const existingBalance = positionsByMarket.get(market.id) ?? 0;
     const mintAmount = Math.max(0, targetPerMarket - existingBalance);
-
-    if (mintAmount <= 0) {
-      console.log(
-        `[setup] ${market.id.slice(0, 8)}... already has ${existingBalance} sets, skipping`,
-      );
-      continue;
-    }
+    if (mintAmount <= 0) continue;
 
     try {
       const hash = await trader.mintCompleteSets(market.id, mintAmount);
-      console.log(
-        `[setup] Minted ${mintAmount} sets for ${market.id.slice(0, 8)}... (had ${existingBalance}) tx=${hash}`,
-      );
+      console.log(`[setup] Minted ${mintAmount} sets for ${market.id.slice(0, 8)}... tx=${hash}`);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      console.error(
-        `[setup] Mint failed for ${market.id.slice(0, 8)}...: ${msg}`,
-      );
+      console.error(`[setup] Mint failed for ${market.id.slice(0, 8)}...: ${msg}`);
     }
   }
-
-  const balance = await trader.getMyBalance();
-  console.log(
-    `[setup] USDC balance: ${typeof balance.usdc === "number" ? balance.usdc.toFixed(2) : balance.usdc}`,
-  );
 }
 
 async function main() {
@@ -101,46 +79,41 @@ async function main() {
       : undefined;
 
   if (!traderConfig && !dryRun) {
-    console.error(
-      "Live mode requires CONTEXT_API_KEY and CONTEXT_PRIVATE_KEY",
-    );
+    console.error("Live mode requires CONTEXT_API_KEY and CONTEXT_PRIVATE_KEY");
     process.exit(1);
   }
 
   if (!process.env.ANTHROPIC_API_KEY) {
-    console.error("ANTHROPIC_API_KEY is required for LLM fair value estimation");
+    console.error("ANTHROPIC_API_KEY is required for sentiment analysis");
     process.exit(1);
   }
 
-  // Mint inventory so we have tokens to sell (live mode only)
   if (traderConfig && !dryRun && mintAmount > 0) {
     const trader = new ContextTrader(traderConfig);
     await ensureInventory(trader, mintAmount);
   }
 
-  // LLM fair value provider — Haiku + ESPN + Vegas enrichment
-  const llmFairValue = new LlmFairValue({
+  // Sentiment fair value — general-purpose LLM reasoning
+  const sentimentFV = new SentimentFairValue({
     model: "claude-haiku-4-5-20251001",
-    cacheTtlMs: 120_000,     // 2 min cache for pre-game
-    liveCacheTtlMs: 30_000,  // 30s cache for live games
-    league: "nba",
+    cacheTtlMs: 300_000,  // 5 min cache (non-sports markets change slowly)
   });
 
   // FairValueService owns caching, rate limiting, cooldowns
   const fairValueConfig: FairValueServiceOptions = {
-    default: llmFairValue,
+    default: sentimentFV,
     maxConcurrentCalls: 1,
     minCallIntervalMs: 20_000,
   };
 
-  // Edge trading strategy — places single large orders at FV ± minEdge
+  // Edge trading strategy — trades directionally based on LLM FV
   // Provider still passed for backwards compat — strategy prefers snapshot.fairValue
   const strategy = new EdgeTradingStrategy({
     markets: { type: "search", query: "", status: "active" },
-    fairValueProvider: llmFairValue,
-    minEdgeCents: 5,          // Need 5¢+ edge to trade
+    fairValueProvider: sentimentFV,
+    minEdgeCents: 5,          // Need 5¢+ edge
     minConfidence: 0.6,       // Need medium+ confidence
-    maxPositionPerMarket: 2000, // Room to push price to FV
+    maxPositionPerMarket: 500,
   });
 
   const agent = new AgentRuntime({
@@ -148,24 +121,20 @@ async function main() {
     strategy,
     fairValue: fairValueConfig,
     risk: {
-      maxPositionSize: 15000, // Total across all markets
-      maxOpenOrders: 500,
-      maxOrderSize: 5000,     // No practical limit — position limits are the real cap
-      maxLoss: -500,
+      maxPositionSize: 10000,
+      maxOpenOrders: 200,
+      maxOrderSize: 500,
+      maxLoss: -200,
     },
-    intervalMs: 30_000,       // 30s cycles (LLM calls take time)
+    intervalMs: 60_000,       // 60s cycles (LLM calls are slow, non-sports don't need rapid updates)
     dryRun,
     maxCycles: dryRun ? 3 : 0,
   });
 
-  console.log(`Starting Sports Trading Agent (dryRun=${dryRun})...`);
-  console.log("Strategy: LLM edge trading (Haiku + ESPN + Vegas)");
-  console.log(`Config: minEdge=5¢, minConf=60%, maxPos=500 (single large orders)`);
-  if (process.env.ODDS_API_KEY) {
-    console.log("Vegas odds: enabled");
-  } else {
-    console.log("Vegas odds: disabled (set ODDS_API_KEY to enable)");
-  }
+  console.log(`Starting Sentiment Agent (dryRun=${dryRun})...`);
+  console.log("Strategy: LLM sentiment analysis → edge trading");
+  console.log("Works for: politics, crypto, entertainment, tech, geopolitics");
+  console.log("Config: minEdge=5¢, minConf=60%, cycle=60s, cache=5min");
   console.log("Press Ctrl+C to stop\n");
 
   await agent.start();

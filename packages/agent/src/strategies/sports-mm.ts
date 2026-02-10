@@ -62,6 +62,8 @@ export interface SportsMmOptions {
   requoteDeltaCents?: number;
   /** The Odds API key. Falls back to ODDS_API_KEY env var. */
   oddsApiKey?: string;
+  /** External fair value provider. If omitted, creates VegasFairValue internally. */
+  fairValueProvider?: VegasFairValue;
 }
 
 interface QuoteState {
@@ -142,7 +144,7 @@ export class SportsMmStrategy implements Strategy {
       this.allowedLeagues = new Set(leagues.map((l) => l.toLowerCase()));
     }
 
-    this.provider = new VegasFairValue({
+    this.provider = options.fairValueProvider ?? new VegasFairValue({
       oddsApiKey: options.oddsApiKey,
       closeGameMarginPts: options.closeGameMarginPts,
       blowoutMarginPts: options.blowoutMarginPts,
@@ -206,9 +208,12 @@ export class SportsMmStrategy implements Strategy {
       return [{ type: "no_action", reason: `League ${league} not in allowed list` }];
     }
 
-    // Get FV with game state metadata
+    // Get FV with game state metadata.
+    // Priority: snapshot.fairValue (from service) > provider
+    // Always need gameState from provider (or metadata) for spread profile selection.
     const fvResult = await this.provider.estimateWithState(snapshot);
-    const { gameState } = fvResult;
+    const gameState: GameState =
+      (snapshot.fairValue?.metadata?.gameState as GameState) ?? fvResult.gameState;
 
     // Final game — pull all quotes
     if (gameState === "final") {
@@ -225,7 +230,12 @@ export class SportsMmStrategy implements Strategy {
       return actions.length > 0 ? actions : [{ type: "no_action", reason: "Game final, no quotes" }];
     }
 
-    const yesFV = clamp(Math.round(fvResult.yesCents), 1, 99);
+    // Prefer service-computed FV if available, fall back to provider
+    const yesFV = clamp(
+      Math.round(snapshot.fairValue?.yesCents ?? fvResult.yesCents),
+      1,
+      99,
+    );
 
     // Calculate inventory skew
     const netYes = this.getNetPosition(state, market.id);

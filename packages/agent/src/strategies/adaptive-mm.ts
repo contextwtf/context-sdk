@@ -103,15 +103,25 @@ export class AdaptiveMmStrategy implements Strategy {
     const { market } = snapshot;
 
     // 1. Determine YES fair value
+    //    Priority: snapshot.fairValue (from service) > provider > static fallback
     let yesFV = this.fairValueCents;
     let fvConfidence = 1;
+    let fvSource = "static";
 
-    if (this.fairValueProvider) {
+    if (snapshot.fairValue) {
+      yesFV = clamp(Math.round(snapshot.fairValue.yesCents), 1, 99);
+      fvConfidence = snapshot.fairValue.confidence;
+      fvSource = "service";
+    } else if (this.fairValueProvider) {
       const estimate = await this.fairValueProvider.estimate(snapshot);
       yesFV = clamp(Math.round(estimate.yesCents), 1, 99);
       fvConfidence = estimate.confidence;
+      fvSource = this.fairValueProvider.name;
+    }
+
+    if (fvSource !== "static") {
       console.log(
-        `[adaptive-mm] FV from ${this.fairValueProvider.name}: ${yesFV}¢ (confidence: ${fvConfidence.toFixed(2)})`,
+        `[adaptive-mm] FV from ${fvSource}: ${yesFV}¢ (confidence: ${fvConfidence.toFixed(2)})`,
       );
     }
 

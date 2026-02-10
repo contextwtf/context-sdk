@@ -26,8 +26,8 @@ import type {
 export interface EdgeTradingOptions {
   /** Markets to trade. */
   markets: MarketSelector;
-  /** Fair value provider (e.g., LlmFairValue). */
-  fairValueProvider: FairValueProvider;
+  /** Fair value provider (e.g., LlmFairValue). Optional if FairValueService is configured at runtime. */
+  fairValueProvider?: FairValueProvider;
   /** Minimum edge in cents to trigger a trade. Default: 5. */
   minEdgeCents?: number;
   /** Minimum confidence from FV provider to trade. Default: 0.6. */
@@ -42,7 +42,7 @@ export class EdgeTradingStrategy implements Strategy {
   readonly name = "Edge Trader";
 
   private readonly selector: MarketSelector;
-  private readonly provider: FairValueProvider;
+  private readonly provider?: FairValueProvider;
   private readonly minEdgeCents: number;
   private readonly minConfidence: number;
   private readonly maxPositionPerMarket: number;
@@ -51,6 +51,7 @@ export class EdgeTradingStrategy implements Strategy {
     this.selector = options.markets;
     this.provider = options.fairValueProvider;
     this.minEdgeCents = options.minEdgeCents ?? 5;
+
     this.minConfidence = options.minConfidence ?? 0.6;
     this.maxPositionPerMarket = options.maxPositionPerMarket ?? 500;
   }
@@ -74,7 +75,7 @@ export class EdgeTradingStrategy implements Strategy {
   }
 
   onFill(fill: any) {
-    this.provider.onFill?.(fill);
+    this.provider?.onFill?.(fill);
   }
 
   // ─── Per-Market Evaluation ───
@@ -86,8 +87,13 @@ export class EdgeTradingStrategy implements Strategy {
     const { market, orderbook } = snapshot;
     const marketId = market.id;
 
-    // Get fair value estimate
-    const fv = await this.provider.estimate(snapshot);
+    // Get fair value estimate: service > provider > skip
+    const fv = snapshot.fairValue
+      ?? (this.provider ? await this.provider.estimate(snapshot) : null);
+
+    if (!fv) {
+      return [{ type: "no_action", reason: "No FV source configured" }];
+    }
 
     // Check confidence
     if (fv.confidence < this.minConfidence) {

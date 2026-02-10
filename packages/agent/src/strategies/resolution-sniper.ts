@@ -28,8 +28,8 @@ import type {
 export interface ResolutionSniperOptions {
   /** Markets to scan — typically all active. */
   markets: MarketSelector;
-  /** Fair value provider (ResolutionFairValue). */
-  fairValueProvider: FairValueProvider;
+  /** Fair value provider (ResolutionFairValue). Optional if FairValueService is configured at runtime. */
+  fairValueProvider?: FairValueProvider;
   /** Max order size per sweep. Default: 500. */
   maxOrderSize?: number;
   /** Min price gap in cents to trade. Default: 5. */
@@ -42,7 +42,7 @@ export class ResolutionSniperStrategy implements Strategy {
   readonly name = "Resolution Sniper";
 
   private readonly selector: MarketSelector;
-  private readonly provider: FairValueProvider;
+  private readonly provider?: FairValueProvider;
   private readonly maxOrderSize: number;
   private readonly minPriceGapCents: number;
 
@@ -72,7 +72,7 @@ export class ResolutionSniperStrategy implements Strategy {
   }
 
   onFill(fill: any) {
-    this.provider.onFill?.(fill);
+    this.provider?.onFill?.(fill);
   }
 
   // ─── Per-Market Evaluation ───
@@ -86,8 +86,13 @@ export class ResolutionSniperStrategy implements Strategy {
     const title = (market.title || (market as any).question || "Unknown").slice(0, 50);
     const id = market.id.slice(0, 10);
 
-    // Get resolution signal from provider
-    const fv = await this.provider.estimate(snapshot);
+    // Get resolution signal: service > provider > skip
+    const fv = snapshot.fairValue
+      ?? (this.provider ? await this.provider.estimate(snapshot) : null);
+
+    if (!fv) {
+      return [{ type: "no_action", reason: "No FV source configured" }];
+    }
 
     // Skip unresolved markets (confidence gate)
     if (fv.confidence < 0.5) {
