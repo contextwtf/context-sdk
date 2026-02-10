@@ -1,0 +1,303 @@
+/**
+ * LLM Tool System
+ *
+ * Defines the tool interface and built-in tools for LLM-powered strategies.
+ * Tools are on-demand lookups the LLM can request during evaluation.
+ * Market data is always in context — tools are for optional deep-dives.
+ */
+
+import type { MarketSnapshot, AgentState } from "../strategy.js";
+import type { AgentMemory } from "./memory.js";
+import {
+  extractLeagueFromQuestion,
+  extractTeamsFromTitle,
+  getUpcomingGames,
+  getTeamFullStats,
+} from "../signals/espn.js";
+import {
+  fetchGameOdds,
+  fetchSpreadOdds,
+  fetchTotalsOdds,
+} from "../signals/vegas.js";
+
+// ─── Types ───
+
+export interface ToolContext {
+  markets: MarketSnapshot[];
+  state: AgentState;
+  memory: AgentMemory;
+}
+
+export interface LlmTool {
+  definition: {
+    name: string;
+    description: string;
+    input_schema: Record<string, unknown>;
+  };
+  execute(params: Record<string, unknown>, context: ToolContext): Promise<string>;
+}
+
+// ─── Built-in Tools ───
+
+/** Web search via Tavily API. Requires TAVILY_API_KEY env var. */
+export const webSearchTool: LlmTool = {
+  definition: {
+    name: "web_search",
+    description:
+      "Search the web for current information. Use this to verify your thesis, check recent news, or find facts about events referenced in prediction markets.",
+    input_schema: {
+      type: "object",
+      properties: {
+        query: {
+          type: "string",
+          description: "The search query",
+        },
+      },
+      required: ["query"],
+    },
+  },
+  async execute(params) {
+    const apiKey = process.env.TAVILY_API_KEY;
+    if (!apiKey) return "Error: TAVILY_API_KEY not set. Web search unavailable.";
+
+    const query = params.query as string;
+    try {
+      const response = await fetch("https://api.tavily.com/search", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          api_key: apiKey,
+          query,
+          max_results: 5,
+          include_answer: true,
+        }),
+      });
+
+      if (!response.ok) {
+        return `Search failed: ${response.status} ${response.statusText}`;
+      }
+
+      const data = await response.json();
+      const parts: string[] = [];
+
+      if (data.answer) {
+        parts.push(`Summary: ${data.answer}`);
+        parts.push("");
+      }
+
+      const results = data.results ?? [];
+      for (const result of results.slice(0, 5)) {
+        parts.push(`- ${result.title}`);
+        parts.push(`  ${result.content?.slice(0, 200) ?? ""}`);
+        parts.push(`  Source: ${result.url}`);
+      }
+
+      return parts.join("\n") || "No results found.";
+    } catch (err) {
+      return `Search error: ${err instanceof Error ? err.message : String(err)}`;
+    }
+  },
+};
+
+/** Get ESPN sports data — scores, standings, team stats. */
+export const espnDataTool: LlmTool = {
+  definition: {
+    name: "get_espn_data",
+    description:
+      "Get live sports data from ESPN: today's scores, game status, and team stats. Use for sports prediction markets.",
+    input_schema: {
+      type: "object",
+      properties: {
+        league: {
+          type: "string",
+          description:
+            "Sport league: nba, nfl, mlb, nhl, ncaab, epl, laliga, bundesliga, seriea, ligue1, ucl, uel, mls",
+        },
+        team: {
+          type: "string",
+          description: "Team name to get stats for (optional — omit for all today's games)",
+        },
+      },
+      required: ["league"],
+    },
+  },
+  async execute(params) {
+    const league = params.league as string;
+    const team = params.team as string | undefined;
+
+    const parts: string[] = [];
+
+    // Always get today's games
+    const games = await getUpcomingGames(league);
+    if (games && games.length > 0) {
+      parts.push(`Today's ${league.toUpperCase()} games:`);
+      for (const game of games) {
+        let line = `  ${game.awayTeam} @ ${game.homeTeam}`;
+        if (game.status === "in_progress") {
+          line += ` — LIVE ${game.statusDetail}: ${game.awayScore}-${game.homeScore}`;
+        } else if (game.status === "final") {
+          line += ` — FINAL: ${game.awayScore}-${game.homeScore}`;
+        } else {
+          line += ` — ${game.time}`;
+        }
+        parts.push(line);
+      }
+      parts.push("");
+    } else {
+      parts.push(`No ${league.toUpperCase()} games found today.`);
+      parts.push("");
+    }
+
+    // Team stats if requested
+    if (team) {
+      const stats = await getTeamFullStats(league, team);
+      if (stats) {
+        parts.push(`${stats.team} stats:`);
+        parts.push(`  Record: ${stats.wins}-${stats.losses} (${(stats.winPct * 100).toFixed(1)}%)`);
+        if (stats.conferenceRank) parts.push(`  Conference rank: #${stats.conferenceRank}`);
+        if (stats.pointsPerGame) parts.push(`  PPG: ${stats.pointsPerGame.toFixed(1)}`);
+        if (stats.pointsAllowedPerGame) parts.push(`  Opp PPG: ${stats.pointsAllowedPerGame.toFixed(1)}`);
+        if (stats.pointDifferential) parts.push(`  Point diff: ${stats.pointDifferential > 0 ? "+" : ""}${stats.pointDifferential.toFixed(1)}`);
+        if (stats.lastFiveRecord) parts.push(`  Last 5: ${stats.lastFiveRecord}`);
+        if (stats.streak) parts.push(`  Streak: ${stats.streak}`);
+      } else {
+        parts.push(`Could not find stats for "${team}" in ${league.toUpperCase()}.`);
+      }
+    }
+
+    return parts.join("\n");
+  },
+};
+
+/** Get Vegas betting odds. Requires ODDS_API_KEY env var. */
+export const vegasOddsTool: LlmTool = {
+  definition: {
+    name: "get_vegas_odds",
+    description:
+      "Get current Vegas betting odds for a team's game. Returns moneyline, spread, and totals with implied probabilities (vig removed).",
+    input_schema: {
+      type: "object",
+      properties: {
+        league: {
+          type: "string",
+          description:
+            "Sport league: nba, nfl, mlb, nhl, ncaab, epl, laliga, bundesliga, seriea, ligue1, ucl, uel, mls",
+        },
+        team: {
+          type: "string",
+          description: "Team name to look up odds for",
+        },
+      },
+      required: ["league", "team"],
+    },
+  },
+  async execute(params) {
+    const league = params.league as string;
+    const team = params.team as string;
+    const parts: string[] = [];
+
+    const [gameOdds, spreadOdds, totalsOdds] = await Promise.all([
+      fetchGameOdds(league, team).catch(() => null),
+      fetchSpreadOdds(league, team).catch(() => null),
+      fetchTotalsOdds(league, team).catch(() => null),
+    ]);
+
+    if (gameOdds) {
+      parts.push(`Moneyline — ${gameOdds.event}:`);
+      parts.push(`  ${gameOdds.homeTeam}: ${(gameOdds.consensus.homeImplied * 100).toFixed(1)}% (${gameOdds.consensus.homeMl > 0 ? "+" : ""}${gameOdds.consensus.homeMl})`);
+      parts.push(`  ${gameOdds.awayTeam}: ${(gameOdds.consensus.awayImplied * 100).toFixed(1)}% (${gameOdds.consensus.awayMl > 0 ? "+" : ""}${gameOdds.consensus.awayMl})`);
+      parts.push(`  Vig: ${gameOdds.consensus.vig.toFixed(1)}%`);
+      parts.push("");
+    }
+
+    if (spreadOdds) {
+      parts.push(`Spread — ${spreadOdds.event}:`);
+      parts.push(`  ${team}: ${spreadOdds.spread > 0 ? "+" : ""}${spreadOdds.spread}`);
+      parts.push(`  Cover implied: ${(spreadOdds.coverImplied * 100).toFixed(1)}%`);
+      parts.push("");
+    }
+
+    if (totalsOdds) {
+      parts.push(`Totals — ${totalsOdds.event}:`);
+      parts.push(`  Line: ${totalsOdds.line}`);
+      parts.push(`  Over: ${(totalsOdds.overImplied * 100).toFixed(1)}%`);
+      parts.push(`  Under: ${(totalsOdds.underImplied * 100).toFixed(1)}%`);
+    }
+
+    if (parts.length === 0) {
+      return `No Vegas odds found for "${team}" in ${league.toUpperCase()}. Check that ODDS_API_KEY is set and the team has an upcoming game.`;
+    }
+
+    return parts.join("\n");
+  },
+};
+
+/** Read from persistent working memory. */
+export const readMemoryTool: LlmTool = {
+  definition: {
+    name: "read_memory",
+    description:
+      "Read a value from your persistent working memory. Use this to recall insights, hypotheses, or notes you saved in previous cycles.",
+    input_schema: {
+      type: "object",
+      properties: {
+        key: {
+          type: "string",
+          description: "The key to read. Use 'list' to see all available keys.",
+        },
+      },
+      required: ["key"],
+    },
+  },
+  async execute(params, context) {
+    const key = params.key as string;
+
+    if (key === "list") {
+      const keys = context.memory.listKeys();
+      return keys.length > 0
+        ? `Available keys: ${keys.join(", ")}`
+        : "Working memory is empty.";
+    }
+
+    const value = context.memory.get(key);
+    return value ?? `No value found for key "${key}".`;
+  },
+};
+
+/** Write to persistent working memory. */
+export const writeMemoryTool: LlmTool = {
+  definition: {
+    name: "write_memory",
+    description:
+      "Save a value to your persistent working memory. Use this to remember insights, track hypotheses, or note important observations across cycles.",
+    input_schema: {
+      type: "object",
+      properties: {
+        key: {
+          type: "string",
+          description: "The key to write (e.g., 'thesis_trump_china', 'market_note_nfp')",
+        },
+        value: {
+          type: "string",
+          description: "The value to store",
+        },
+      },
+      required: ["key", "value"],
+    },
+  },
+  async execute(params, context) {
+    const key = params.key as string;
+    const value = params.value as string;
+    context.memory.set(key, value);
+    return `Saved to memory: ${key}`;
+  },
+};
+
+/** All built-in tools. */
+export const builtinTools: LlmTool[] = [
+  webSearchTool,
+  espnDataTool,
+  vegasOddsTool,
+  readMemoryTool,
+  writeMemoryTool,
+];

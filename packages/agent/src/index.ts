@@ -79,6 +79,37 @@ export {
   type FavoritesDipOptions,
 } from "./strategies/favorites-dip.js";
 
+// LLM-powered strategy
+export {
+  LlmStrategy,
+  type LlmStrategyOptions,
+} from "./strategies/llm-strategy.js";
+
+// LLM building blocks
+export {
+  type LlmClient,
+  type LlmTool,
+  type ContextEnrichment,
+  type ChatMessage,
+  type ToolDefinition,
+  webSearchTool,
+  espnDataTool,
+  vegasOddsTool,
+  readMemoryTool,
+  writeMemoryTool,
+  builtinTools,
+  oracleEvolution,
+  orderbookDiff,
+  priceMomentum,
+  volumeProfile,
+  AgentMemory,
+  type MemoryOptions,
+  CostController,
+  type CostControlOptions,
+  createLlmClient,
+} from "./llm/index.js";
+
 // Signals (sports data enrichment)
 export * as espn from "./signals/espn.js";
 export * as vegas from "./signals/vegas.js";
+export { extractLeagueFromQuestion } from "./signals/espn.js";
