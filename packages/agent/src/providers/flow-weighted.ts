@@ -1,3 +1,8 @@
+/**
+ * @deprecated Flow tracking is now handled by FairValueService at the runtime level.
+ * Configure `flow` in FairValueServiceOptions instead of wrapping providers with this class.
+ * This provider is preserved for backwards compatibility but will be removed in a future version.
+ */
 import { readFileSync, writeFile } from "node:fs";
 import type { Fill } from "@context-markets/sdk";
 import type { MarketSnapshot } from "../strategy.js";

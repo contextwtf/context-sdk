@@ -38,16 +38,6 @@ export interface LlmFairValueOptions {
   league?: string;
 }
 
-interface CacheEntry {
-  estimate: FairValueEstimate;
-  reasoning: string;
-  timestamp: number;
-  ttl: number;
-  /** Cached score for invalidation on score change */
-  homeScore?: number;
-  awayScore?: number;
-}
-
 interface EnrichedContext {
   league: string | null;
   teamNames: string[];
@@ -72,8 +62,6 @@ export class LlmFairValue implements FairValueProvider {
   private readonly oddsApiKey?: string;
   private readonly defaultLeague?: string;
 
-  private readonly cache = new Map<string, CacheEntry>();
-
   constructor(options: LlmFairValueOptions = {}) {
     this.client = new Anthropic({ apiKey: options.apiKey });
     this.model = options.model || "claude-haiku-4-5-20251001";
@@ -96,35 +84,24 @@ export class LlmFairValue implements FairValueProvider {
 
       // Final game → deterministic FV based on score, skip LLM entirely
       if (liveGame?.status === "final") {
-        return this.handleFinalGame(market.id, liveGame, teamNames);
+        return this.handleFinalGame(liveGame, teamNames);
       }
 
-      // Check cache (with score-based invalidation for live games)
-      const cached = this.getCachedWithScore(market.id, liveGame);
-      if (cached) return cached;
+      // Determine cache TTL hint for the service
+      const isLive = liveGame?.status === "in_progress";
+      const cacheTtlMs = isLive ? this.liveCacheTtlMs : this.cacheTtlMs;
 
-      // Phase 2: Full enrichment + LLM (only on cache miss)
+      // Enrich with ESPN + Vegas data, then call LLM
       const context = await this.enrich(snapshot, league, teamNames, liveGame);
-
-      const ttl = liveGame?.status === "in_progress"
-        ? this.liveCacheTtlMs
-        : this.cacheTtlMs;
-
       const prompt = this.buildPrompt(snapshot, context);
       const result = await this.callLlm(prompt);
 
-      // Cache result with score for future invalidation
-      this.cache.set(market.id, {
-        estimate: result.estimate,
-        reasoning: result.reasoning,
-        timestamp: Date.now(),
-        ttl,
-        homeScore: liveGame?.homeScore,
-        awayScore: liveGame?.awayScore,
-      });
-
       this.logEstimate(snapshot, context, result);
-      return result.estimate;
+      return {
+        ...result.estimate,
+        reasoning: result.reasoning,
+        cacheTtlMs,
+      };
     } catch (error) {
       console.error(`[llm-fv] Error estimating ${market.id}:`, error);
       return { yesCents: this.fallbackCents, confidence: 0.3 };
@@ -153,7 +130,6 @@ export class LlmFairValue implements FairValueProvider {
   }
 
   private handleFinalGame(
-    marketId: string,
     game: UpcomingGame,
     teamNames: string[],
   ): FairValueEstimate {
@@ -171,63 +147,14 @@ export class LlmFairValue implements FairValueProvider {
 
     const yesCents = subjectWon === null ? 50 : subjectWon ? 97 : 3;
     const confidence = subjectWon === null ? 0.5 : 0.99;
-    const estimate: FairValueEstimate = { yesCents, confidence };
+    const reasoning = `Game final: ${game.homeTeam} ${homeScore} - ${game.awayTeam} ${awayScore}`;
 
     console.log(
       `[llm-fv] FINAL: ${game.homeTeam} ${homeScore} - ${game.awayTeam} ${awayScore} → ${teamNames[0] || "subject"} ${subjectWon === null ? "TIED" : subjectWon ? "WON" : "LOST"} → FV=${yesCents}¢`,
     );
 
     // Cache indefinitely — game result won't change
-    this.cache.set(marketId, {
-      estimate,
-      reasoning: `Game final: ${game.homeTeam} ${homeScore} - ${game.awayTeam} ${awayScore}`,
-      timestamp: Date.now(),
-      ttl: Number.MAX_SAFE_INTEGER,
-      homeScore,
-      awayScore,
-    });
-
-    return estimate;
-  }
-
-  // ─── Cache ───
-
-  private getCachedWithScore(
-    marketId: string,
-    liveGame: UpcomingGame | null,
-  ): FairValueEstimate | null {
-    const entry = this.cache.get(marketId);
-    if (!entry) return null;
-
-    // TTL check
-    if (Date.now() - entry.timestamp > entry.ttl) {
-      this.cache.delete(marketId);
-      return null;
-    }
-
-    // Score-based invalidation for live games
-    if (liveGame?.status === "in_progress") {
-      if (entry.homeScore === undefined || entry.awayScore === undefined) {
-        // Game just went live — cached entry is from pre-game, invalidate immediately
-        console.log(
-          `[llm-fv] Game went live ${marketId.slice(0, 8)}..., re-evaluating with live data`,
-        );
-        this.cache.delete(marketId);
-        return null;
-      }
-      if (
-        entry.homeScore !== liveGame.homeScore ||
-        entry.awayScore !== liveGame.awayScore
-      ) {
-        console.log(
-          `[llm-fv] Score changed ${marketId.slice(0, 8)}... (${entry.homeScore}-${entry.awayScore} → ${liveGame.homeScore}-${liveGame.awayScore}), re-evaluating`,
-        );
-        this.cache.delete(marketId);
-        return null;
-      }
-    }
-
-    return entry.estimate;
+    return { yesCents, confidence, reasoning, cacheTtlMs: Number.MAX_SAFE_INTEGER };
   }
 
   // ─── Enrichment ───

@@ -34,12 +34,6 @@ export interface SentimentFairValueOptions {
   fallbackCents?: number;
 }
 
-interface CacheEntry {
-  estimate: FairValueEstimate;
-  reasoning: string;
-  timestamp: number;
-}
-
 // ─── Provider ───
 
 export class SentimentFairValue implements FairValueProvider {
@@ -49,8 +43,6 @@ export class SentimentFairValue implements FairValueProvider {
   private readonly model: string;
   private readonly cacheTtlMs: number;
   private readonly fallbackCents: number;
-
-  private readonly cache = new Map<string, CacheEntry>();
 
   constructor(options: SentimentFairValueOptions = {}) {
     this.client = new Anthropic({ apiKey: options.apiKey });
@@ -62,25 +54,16 @@ export class SentimentFairValue implements FairValueProvider {
   async estimate(snapshot: MarketSnapshot): Promise<FairValueEstimate> {
     const { market } = snapshot;
 
-    // Check cache
-    const cached = this.cache.get(market.id);
-    if (cached && Date.now() - cached.timestamp < this.cacheTtlMs) {
-      return cached.estimate;
-    }
-
     try {
       const prompt = this.buildPrompt(snapshot);
       const result = await this.callLlm(prompt);
 
-      // Cache result
-      this.cache.set(market.id, {
-        estimate: result.estimate,
-        reasoning: result.reasoning,
-        timestamp: Date.now(),
-      });
-
       this.logEstimate(snapshot, result);
-      return result.estimate;
+      return {
+        ...result.estimate,
+        reasoning: result.reasoning,
+        cacheTtlMs: this.cacheTtlMs,
+      };
     } catch (error) {
       console.error(`[sentiment-fv] Error estimating ${market.id}:`, error);
       return { yesCents: this.fallbackCents, confidence: 0.3 };
