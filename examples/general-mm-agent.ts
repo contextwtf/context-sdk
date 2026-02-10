@@ -18,6 +18,7 @@ import {
   AgentRuntime,
   AdaptiveMmStrategy,
   GeminiFairValue,
+  extractLeagueFromQuestion,
   type FairValueServiceOptions,
 } from "@context-markets/agent";
 import { ContextClient, ContextTrader } from "@context-markets/sdk";
@@ -46,16 +47,23 @@ async function ensureInventory(trader: ContextTrader, targetPerMarket: number) {
   }
 
   for (const market of markets) {
+    // Skip sports markets — the general MM only prices non-sports
+    const title = (market as any).title || (market as any).question || "";
+    if (extractLeagueFromQuestion(title)) {
+      console.log(`[setup] SKIP sports: ${title.slice(0, 50)}...`);
+      continue;
+    }
+
     const existingBalance = positionsByMarket.get(market.id) ?? 0;
     const mintNeeded = Math.max(0, targetPerMarket - existingBalance);
     if (mintNeeded <= 0) continue;
 
     try {
       const hash = await trader.mintCompleteSets(market.id, mintNeeded);
-      console.log(`[setup] Minted ${mintNeeded} sets for ${market.id.slice(0, 8)}... tx=${hash}`);
+      console.log(`[setup] Minted ${mintNeeded} sets for ${title.slice(0, 50)}... tx=${hash}`);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      console.error(`[setup] Mint failed for ${market.id.slice(0, 8)}...: ${msg}`);
+      console.error(`[setup] Mint failed for ${title.slice(0, 50)}...: ${msg}`);
     }
   }
 }

@@ -73,9 +73,9 @@ async function ensureInventory(trader: ContextTrader, targetPerMarket: number) {
 
 async function main() {
   const apiKey = process.env.CONTEXT_API_KEY;
-  const privateKey = process.env.CONTEXT_PRIVATE_KEY as Hex | undefined;
+  const privateKey = (process.env.AGENT_3_PRIVATE_KEY || process.env.CONTEXT_PRIVATE_KEY) as Hex | undefined;
   const dryRun = process.env.DRY_RUN !== "false";
-  const mintAmount = Number(process.env.MINT_AMOUNT ?? "100");
+  const mintAmount = Number(process.env.MINT_AMOUNT ?? "500");
 
   const traderConfig =
     apiKey && privateKey
@@ -106,8 +106,8 @@ async function main() {
   const strategy = new ResolutionSniperStrategy({
     markets: { type: "search", query: "", status: "active" },
     fairValueProvider: resolutionFV,
-    maxOrderSize: 500,
-    minPriceGapCents: 5,
+    maxOrderSize: 2000,
+    minPriceGapCents: 3,
   });
 
   const agent = new AgentRuntime({
@@ -115,12 +115,12 @@ async function main() {
     strategy,
     fairValue: fairValueConfig,
     risk: {
-      maxPositionSize: 10000,
-      maxOpenOrders: 100,
-      maxOrderSize: 500,
-      maxLoss: -200,
+      maxPositionSize: 20000,
+      maxOpenOrders: 200,
+      maxOrderSize: 2000,
+      maxLoss: -5000,
     },
-    intervalMs: 30_000,
+    intervalMs: 15_000,
     dryRun,
     maxCycles: dryRun ? 3 : 0,
   });

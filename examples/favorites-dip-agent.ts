@@ -26,7 +26,7 @@ import type { Hex } from "viem";
 
 async function main() {
   const apiKey = process.env.CONTEXT_API_KEY;
-  const privateKey = process.env.CONTEXT_PRIVATE_KEY as Hex | undefined;
+  const privateKey = (process.env.AGENT_2_PRIVATE_KEY || process.env.CONTEXT_PRIVATE_KEY) as Hex | undefined;
   const dryRun = process.env.DRY_RUN !== "false";
 
   const traderConfig =
@@ -49,12 +49,12 @@ async function main() {
   const strategy = new FavoritesDipStrategy({
     markets: { type: "search", query: "", status: "active" },
     league: ["nba", "ncaab", "nhl", "epl", "laliga", "bundesliga", "seriea", "ligue1", "ucl", "mls"],
-    dipThresholdCents: 8,
+    dipThresholdCents: 6,
     minFavoriteImplied: 0.50,
-    includeHomeUnderdogs: false,
-    entrySize: 25,
-    maxPositionPerMarket: 50,
-    maxConcurrentPositions: 5,
+    includeHomeUnderdogs: true,
+    entrySize: 100,
+    maxPositionPerMarket: 200,
+    maxConcurrentPositions: 8,
     stopLossCents: 6,
     trailingStopCents: 4,
     profitTightenThreshold: 12,
@@ -74,10 +74,10 @@ async function main() {
     strategy,
     fairValue: fairValueConfig,
     risk: {
-      maxPositionSize: 5000,
-      maxOpenOrders: 50,
-      maxOrderSize: 500,
-      maxLoss: -500,
+      maxPositionSize: 15000,
+      maxOpenOrders: 100,
+      maxOrderSize: 1000,
+      maxLoss: -2000,
     },
     intervalMs: 15_000,
     dryRun,
@@ -87,8 +87,8 @@ async function main() {
   console.log(`Starting Favorites Dip Agent (dryRun=${dryRun})...`);
   console.log("Strategy: Buy favorites/home teams who fall behind early");
   console.log(
-    `Config: dipThreshold=8¢, stopLoss=6¢, trailStop=4¢, ` +
-    `entrySize=25, maxPos=50, maxConcurrent=5`,
+    `Config: dipThreshold=6¢, stopLoss=6¢, trailStop=4¢, ` +
+    `entrySize=100, maxPos=200, maxConcurrent=8, homeUnderdogs=on`,
   );
   console.log(`Leagues: NBA, NCAAB, NHL, EPL, La Liga, Bundesliga, Serie A, Ligue 1, UCL, MLS`);
   if (process.env.ODDS_API_KEY) {

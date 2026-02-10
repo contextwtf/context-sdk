@@ -87,17 +87,17 @@ export const ERC20_ABI = [
 
 export const HOLDINGS_ABI = [
   {
-    name: "setApprovalForAll",
+    name: "setOperator",
     type: "function",
     stateMutability: "nonpayable",
     inputs: [
       { name: "operator", type: "address" },
       { name: "approved", type: "bool" },
     ],
-    outputs: [],
+    outputs: [{ name: "", type: "bool" }],
   },
   {
-    name: "isApprovedForAll",
+    name: "isOperatorFor",
     type: "function",
     stateMutability: "view",
     inputs: [

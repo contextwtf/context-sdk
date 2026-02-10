@@ -300,7 +300,7 @@ export class ContextTrader extends ContextClient {
         publicClient.readContract({
           address: HOLDINGS_ADDRESS,
           abi: HOLDINGS_ABI,
-          functionName: "isApprovedForAll",
+          functionName: "isOperatorFor",
           args: [this.address, SETTLEMENT_ADDRESS],
         }),
       ]);
@@ -337,7 +337,7 @@ export class ContextTrader extends ContextClient {
         chain: baseSepolia,
         address: HOLDINGS_ADDRESS,
         abi: HOLDINGS_ABI,
-        functionName: "setApprovalForAll",
+        functionName: "setOperator",
         args: [SETTLEMENT_ADDRESS, true],
       });
     }
