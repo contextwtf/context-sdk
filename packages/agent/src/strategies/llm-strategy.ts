@@ -71,6 +71,9 @@ export interface LlmStrategyOptions {
   memory?: MemoryOptions;
   /** Cost control configuration. */
   costControl?: CostControlOptions;
+
+  /** Print the LLM's reasoning to console as a running commentary. Default: false. */
+  verbose?: boolean;
 }
 
 // ─── LLM Strategy ───
@@ -86,6 +89,7 @@ export class LlmStrategy implements Strategy {
   private readonly tools: LlmTool[];
   private readonly memory: AgentMemory;
   private readonly costController: CostController;
+  private readonly verbose: boolean;
 
   private cycleNumber = 0;
   private enrichmentHistory: EnrichmentInput[] = [];
@@ -120,6 +124,7 @@ export class LlmStrategy implements Strategy {
 
     this.memory = new AgentMemory(options.memory);
     this.costController = new CostController(options.costControl);
+    this.verbose = options.verbose ?? false;
   }
 
   async selectMarkets(): Promise<MarketSelector> {
@@ -209,16 +214,37 @@ export class LlmStrategy implements Strategy {
       totalUsage.inputTokens += response.usage.inputTokens;
       totalUsage.outputTokens += response.usage.outputTokens;
 
+      // Print initial thinking
+      if (this.verbose && response.text) {
+        this.narrate(response.text);
+      }
+
       // Tool loop
       while (response.hasToolCalls && toolCallCount < maxToolCalls) {
         // Add assistant message to conversation
         messages.push(response.message);
 
-        // Execute each tool call
+        // Execute tool calls, stopping at the limit
         const toolResults: Array<{ type: "tool_result"; tool_use_id: string; content: string }> = [];
         for (const call of response.toolCalls) {
+          if (toolCallCount >= maxToolCalls) {
+            // Budget exhausted — return a polite refusal for remaining calls
+            toolResults.push({
+              type: "tool_result",
+              tool_use_id: call.id,
+              content: "[Tool call limit reached — please output your trading decisions now.]",
+            });
+            continue;
+          }
+
           toolCallCount++;
           const tool = this.tools.find((t) => t.definition.name === call.name);
+
+          if (this.verbose) {
+            const args = Object.entries(call.input).map(([k, v]) => `${k}=${JSON.stringify(v)}`).join(", ");
+            console.log(`\n\x1b[33m  [tool] ${call.name}(${args})\x1b[0m`);
+          }
+
           let result: string;
           if (tool) {
             try {
@@ -228,6 +254,12 @@ export class LlmStrategy implements Strategy {
             }
           } else {
             result = `Unknown tool: ${call.name}`;
+          }
+
+          if (this.verbose) {
+            const preview = result.split("\n").slice(0, 6).join("\n");
+            const truncated = result.split("\n").length > 6 ? "\n    ..." : "";
+            console.log(`\x1b[2m    ${preview.replace(/\n/g, "\n    ")}${truncated}\x1b[0m`);
           }
 
           console.log(`[llm-strategy] Tool: ${call.name} (${toolCallCount}/${maxToolCalls})`);
@@ -241,17 +273,31 @@ export class LlmStrategy implements Strategy {
         // Add tool results as user message
         messages.push({ role: "user", content: toolResults });
 
-        // Call LLM again with tool results
+        // If we've hit the tool limit, do one final call WITHOUT tools to force a decision
+        const atLimit = toolCallCount >= maxToolCalls;
+
+        if (atLimit) {
+          messages.push({
+            role: "user",
+            content: "Your tool budget for this cycle is exhausted. Based on the research above, output your trading decisions now as a JSON block with \"reasoning\" and \"actions\" fields. If you don't want to trade, use {\"reasoning\": \"...\", \"actions\": [{\"type\": \"no_action\", \"reason\": \"...\"}]}.",
+          });
+        }
+
         response = await this.client.chat({
           model,
           system: this.systemPrompt,
           messages,
-          tools: toolDefs.length > 0 ? toolDefs : undefined,
+          tools: atLimit ? undefined : (toolDefs.length > 0 ? toolDefs : undefined),
           maxTokens: 4096,
         });
 
         totalUsage.inputTokens += response.usage.inputTokens;
         totalUsage.outputTokens += response.usage.outputTokens;
+
+        // Print thinking after tool results
+        if (this.verbose && response.text) {
+          this.narrate(response.text);
+        }
       }
 
       // 7. Parse actions from final response
@@ -570,6 +616,22 @@ export class LlmStrategy implements Strategy {
       return text.slice(0, braceIdx).trim().slice(0, 500);
     }
     return text.slice(0, 500);
+  }
+
+  /** Print the LLM's reasoning as styled narration. */
+  private narrate(text: string): void {
+    // Strip JSON blocks for readability — we show actions separately
+    const reasoning = this.extractReasoning(text);
+    if (!reasoning) return;
+
+    const lines = reasoning.split("\n");
+    console.log(`\n\x1b[36m  ${this.name}:\x1b[0m`);
+    for (const line of lines) {
+      if (line.trim()) {
+        console.log(`\x1b[37m  ${line}\x1b[0m`);
+      }
+    }
+    console.log("");
   }
 
   private summarizeAction(action: Action): string {

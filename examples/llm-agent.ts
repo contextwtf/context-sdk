@@ -106,6 +106,8 @@ Output format: After your analysis, output a JSON block with your decisions:
       maxToolCallsPerCycle: 3,
       dailyBudgetCents: 500,
     },
+
+    verbose: true,
   });
 
   const agent = new AgentRuntime({
