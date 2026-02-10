@@ -217,7 +217,7 @@ export class VegasFairValue implements FairValueProvider {
       return { yesCents: 50, confidence: 0.3, gameState: "unknown" };
     }
 
-    const teamNames = extractTeamsFromTitle(title);
+    const teamNames = extractTeamsFromTitle(title, league);
     if (teamNames.length === 0) {
       return { yesCents: 50, confidence: 0.3, gameState: "unknown" };
     }

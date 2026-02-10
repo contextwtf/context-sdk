@@ -153,6 +153,103 @@ export const TEAM_ALIASES: Record<string, string[]> = {
   "vegas golden knights": ["golden knights", "vegas knights"],
 };
 
+/**
+ * NCAAB team aliases. Separate from pro teams to avoid ambiguity
+ * (e.g., "Miami" = Heat in NBA, Hurricanes in NCAAB).
+ * Keys should match The Odds API naming (longest form of school name).
+ * Values are aliases found in market titles.
+ */
+export const NCAAB_TEAM_ALIASES: Record<string, string[]> = {
+  // ACC
+  "north carolina": ["tar heels", "unc"],
+  "duke": ["blue devils"],
+  "virginia": ["cavaliers", "uva"],
+  "florida state": ["florida st", "seminoles", "fsu"],
+  "clemson": ["tigers"],
+  "notre dame": ["fighting irish"],
+  "pittsburgh": ["pitt", "panthers"],
+  "syracuse": ["orange", "cuse"],
+  "louisville": ["cardinals"],
+  "wake forest": ["demon deacons"],
+  "nc state": ["wolfpack"],
+  "georgia tech": ["yellow jackets"],
+  "boston college": ["eagles"],
+  "smu": ["mustangs"],
+  "stanford": ["cardinal"],
+  "california": ["cal", "golden bears"],
+  "miami": ["hurricanes", "miami (fl)"],
+  "virginia tech": ["hokies"],
+  // SEC
+  "alabama": ["crimson tide", "bama"],
+  "auburn": ["tigers"],
+  "kentucky": ["wildcats", "uk"],
+  "tennessee": ["volunteers", "vols"],
+  "arkansas": ["razorbacks", "hogs"],
+  "lsu": ["tigers"],
+  "florida": ["gators"],
+  "georgia": ["bulldogs", "uga"],
+  "ole miss": ["rebels", "mississippi"],
+  "mississippi state": ["bulldogs", "miss state", "miss st"],
+  "texas a&m": ["aggies", "tamu"],
+  "south carolina": ["gamecocks"],
+  "missouri": ["mizzou", "tigers"],
+  "vanderbilt": ["commodores", "vandy"],
+  "texas": ["longhorns"],
+  "oklahoma": ["sooners"],
+  // Big Ten
+  "purdue": ["boilermakers"],
+  "illinois": ["fighting illini", "illini"],
+  "michigan state": ["spartans", "msu"],
+  "michigan": ["wolverines"],
+  "indiana": ["hoosiers"],
+  "iowa": ["hawkeyes"],
+  "wisconsin": ["badgers"],
+  "ohio state": ["buckeyes", "osu"],
+  "maryland": ["terrapins", "terps"],
+  "minnesota": ["golden gophers", "gophers"],
+  "nebraska": ["cornhuskers", "huskers"],
+  "northwestern": ["wildcats"],
+  "penn state": ["nittany lions"],
+  "rutgers": ["scarlet knights"],
+  "usc": ["trojans"],
+  "ucla": ["bruins"],
+  "oregon": ["ducks"],
+  // Big 12
+  "kansas": ["jayhawks", "ku"],
+  "baylor": ["bears"],
+  "houston": ["cougars"],
+  "iowa state": ["cyclones"],
+  "kansas state": ["k-state", "wildcats"],
+  "tcu": ["horned frogs"],
+  "texas tech": ["red raiders"],
+  "oklahoma state": ["oklahoma st", "cowboys"],
+  "byu": ["cougars", "brigham young"],
+  "cincinnati": ["bearcats"],
+  "ucf": ["knights"],
+  "west virginia": ["mountaineers", "wvu"],
+  "colorado": ["buffaloes", "buffs"],
+  "arizona": ["wildcats"],
+  "arizona state": ["sun devils", "asu"],
+  "utah": ["utes"],
+  // Big East
+  "uconn": ["huskies", "connecticut"],
+  "marquette": ["golden eagles"],
+  "creighton": ["bluejays"],
+  "villanova": ["wildcats", "nova"],
+  "xavier": ["musketeers"],
+  "st. john's": ["red storm", "st john's", "saint john's"],
+  "seton hall": ["pirates"],
+  "butler": ["bulldogs"],
+  "georgetown": ["hoyas"],
+  "providence": ["friars"],
+  "depaul": ["blue demons"],
+  // Notable others
+  "gonzaga": ["bulldogs", "zags"],
+  "san diego state": ["aztecs", "sdsu"],
+  "memphis": ["tigers"],
+  "dayton": ["flyers"],
+};
+
 // ─── Core Functions ───
 
 /**
@@ -692,45 +789,72 @@ export function extractLeagueFromQuestion(question: string | undefined | null): 
 }
 
 /**
- * Extract team names from market title.
- * Returns up to two team names for head-to-head matchups.
+ * Search an alias dictionary for team names in a lowercased title string.
+ * @param useCanonicalAsName — if true, return the canonical key itself as the name
+ *   (useful for NCAAB where keys are school names like "north carolina").
+ *   If false, use the last word of the canonical name (e.g., "miami heat" → "Heat").
  */
-export function extractTeamsFromTitle(title: string | undefined | null): string[] {
-  if (!title) return [];
-  const lower = title.toLowerCase();
-
-  // Find teams with their position in the title so we preserve mention order
-  // (first team mentioned = subject team in "Will X defeat Y?" patterns)
-  // Include canonical name in search to match full team names in titles
+function searchAliasDict(
+  dict: Record<string, string[]>,
+  lower: string,
+  useCanonicalAsName: boolean,
+): { name: string; position: number; matchLen: number }[] {
   const found: { name: string; position: number; matchLen: number }[] = [];
 
-  for (const [canonical, aliases] of Object.entries(TEAM_ALIASES)) {
-    // Include canonical name itself, sort all longest first
+  for (const [canonical, aliases] of Object.entries(dict)) {
     const allAliases = [canonical, ...aliases].sort((a, b) => b.length - a.length);
     for (const alias of allAliases) {
       const pos = lower.indexOf(alias);
       if (pos !== -1) {
-        const shortName = canonical.split(" ").pop() || canonical;
+        const name = useCanonicalAsName
+          ? canonical
+          : (canonical.split(" ").pop() || canonical);
 
-        // Check for overlapping match at same position range — keep the longer one
         const overlapIdx = found.findIndex((f) => {
           const aStart = pos, aEnd = pos + alias.length;
           const bStart = f.position, bEnd = f.position + f.matchLen;
-          return aStart < bEnd && bStart < aEnd; // ranges overlap
+          return aStart < bEnd && bStart < aEnd;
         });
 
         if (overlapIdx !== -1) {
-          // Replace only if this match is longer (more specific)
           if (alias.length > found[overlapIdx].matchLen) {
-            found[overlapIdx] = { name: shortName, position: pos, matchLen: alias.length };
+            found[overlapIdx] = { name, position: pos, matchLen: alias.length };
           }
-        } else if (!found.some((f) => f.name === shortName)) {
-          found.push({ name: shortName, position: pos, matchLen: alias.length });
+        } else if (!found.some((f) => f.name === name)) {
+          found.push({ name, position: pos, matchLen: alias.length });
         }
-        break; // Best match for this canonical entry
+        break;
       }
     }
   }
+
+  return found;
+}
+
+/**
+ * Extract team names from market title.
+ * Returns up to two team names for head-to-head matchups.
+ * @param league — if provided, uses league-specific aliases (e.g., NCAAB) to avoid
+ *   ambiguity with pro teams (e.g., "Miami" = Heat in NBA, Hurricanes in NCAAB).
+ */
+export function extractTeamsFromTitle(title: string | undefined | null, league?: string | null): string[] {
+  if (!title) return [];
+  const lower = title.toLowerCase();
+
+  // For NCAAB, search college aliases first to avoid pro team conflicts
+  // (e.g., "Miami" = Heat in NBA, Hurricanes in NCAAB)
+  if (league === "ncaab") {
+    const found = searchAliasDict(NCAAB_TEAM_ALIASES, lower, /* useCanonicalAsName */ true);
+    if (found.length >= 2) {
+      return found.sort((a, b) => a.position - b.position).slice(0, 2).map((f) => f.name);
+    }
+    // Fall through to regex fallback if we didn't find 2 teams
+  }
+
+  // Find teams with their position in the title so we preserve mention order
+  // (first team mentioned = subject team in "Will X defeat Y?" patterns)
+  // Include canonical name in search to match full team names in titles
+  const found = searchAliasDict(TEAM_ALIASES, lower, /* useCanonicalAsName */ false);
 
   // Sort by position in title and return up to 2
   if (found.length > 0) {
