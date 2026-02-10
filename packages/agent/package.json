@@ -28,7 +28,8 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",
-    "@context-markets/sdk": "*"
+    "@context-markets/sdk": "*",
+    "@google/generative-ai": "^0.24.1"
   },
   "peerDependencies": {
     "viem": "^2.0.0"

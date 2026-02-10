@@ -8,6 +8,7 @@ import type {
   Portfolio,
   Balance,
 } from "@context-markets/sdk";
+import type { FairValueEstimate } from "./fair-value.js";
 
 // ─── Market Selection ───
 
@@ -22,6 +23,8 @@ export interface MarketSnapshot {
   quotes: Quote[];
   orderbook: Orderbook;
   oracleSignals: OracleSignal[];
+  /** Pre-computed fair value from FairValueService (if configured at runtime). */
+  fairValue?: FairValueEstimate;
 }
 
 export interface AgentState {

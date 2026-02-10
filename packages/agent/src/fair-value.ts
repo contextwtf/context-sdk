@@ -6,6 +6,12 @@ export interface FairValueEstimate {
   yesCents: number;
   /** Confidence in the estimate (0-1). Low confidence = widen spread. */
   confidence: number;
+  /** LLM reasoning or evidence summary. */
+  reasoning?: string;
+  /** Provider-specific data (game state, source, etc). */
+  metadata?: Record<string, unknown>;
+  /** How long to cache this estimate (ms). Provider hint for the FairValueService. */
+  cacheTtlMs?: number;
 }
 
 export interface FairValueProvider {

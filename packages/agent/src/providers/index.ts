@@ -4,3 +4,7 @@ export { MidpointFairValue } from "./midpoint.js";
 export { ChainedFairValue } from "./chained.js";
 export { FlowWeightedFairValue, type FlowWeightedFairValueOptions } from "./flow-weighted.js";
 export { LlmFairValue, type LlmFairValueOptions } from "./llm.js";
+export { ResolutionFairValue } from "./resolution.js";
+export { SentimentFairValue, type SentimentFairValueOptions } from "./sentiment.js";
+export { VegasFairValue, type VegasFairValueResult, type GameState } from "./vegas-fv.js";
+export { GeminiFairValue, type GeminiFairValueOptions } from "./gemini-fv.js";

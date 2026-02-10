@@ -14,6 +14,10 @@ import type {
 } from "./strategy.js";
 import { RiskManager, type RiskLimits } from "./risk.js";
 import { TradeLogger, type LogEntry } from "./logger.js";
+import {
+  FairValueService,
+  type FairValueServiceOptions,
+} from "./fair-value-service.js";
 
 export interface AgentRuntimeOptions {
   /** Trader credentials. Omit for read-only dry run. */
@@ -28,6 +32,8 @@ export interface AgentRuntimeOptions {
   dryRun?: boolean;
   /** Max cycles before auto-stop. 0 = unlimited. Default: 0. */
   maxCycles?: number;
+  /** Fair value service config. If provided, FVs are computed centrally and attached to snapshots. */
+  fairValue?: FairValueServiceOptions;
 }
 
 export class AgentRuntime {
@@ -39,6 +45,7 @@ export class AgentRuntime {
   private readonly intervalMs: number;
   private readonly dryRun: boolean;
   private readonly maxCycles: number;
+  private readonly fairValueService: FairValueService | null;
 
   private running = false;
   private timer: ReturnType<typeof setTimeout> | null = null;
@@ -63,6 +70,9 @@ export class AgentRuntime {
     this.intervalMs = options.intervalMs ?? 15_000;
     this.dryRun = options.dryRun ?? false;
     this.maxCycles = options.maxCycles ?? 0;
+    this.fairValueService = options.fairValue
+      ? new FairValueService(options.fairValue)
+      : null;
   }
 
   async start(): Promise<void> {
@@ -141,6 +151,11 @@ export class AgentRuntime {
       // 3. Fetch snapshots in parallel
       const snapshots = await this.fetchSnapshots(marketIds);
       this.logger.logCycleStart(snapshots);
+
+      // 3b. Compute fair values (if service configured)
+      if (this.fairValueService) {
+        await this.fairValueService.computeAll(snapshots);
+      }
 
       // 4. Fetch agent state
       const state = await this.fetchAgentState();
@@ -252,9 +267,12 @@ export class AgentRuntime {
       console.log(`[fill-debug] disappeared=${disappeared} filledInc=${filledInc} unchanged=${unchanged} fills=${fills.length}`);
     }
 
-    // Notify strategy and logger for each detected fill
+    // Notify service, strategy, and logger for each detected fill
     for (const fill of fills) {
       this.logger.logFill(fill);
+      if (this.fairValueService) {
+        this.fairValueService.onFill(fill);
+      }
       if (this.strategy.onFill) {
         this.strategy.onFill(fill);
       }

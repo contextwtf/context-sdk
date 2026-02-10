@@ -17,6 +17,10 @@ export type {
 // Fair value
 export type { FairValueEstimate, FairValueProvider } from "./fair-value.js";
 export {
+  FairValueService,
+  type FairValueServiceOptions,
+} from "./fair-value-service.js";
+export {
   StaticFairValue,
   OracleFairValue,
   MidpointFairValue,
@@ -25,6 +29,14 @@ export {
   type FlowWeightedFairValueOptions,
   LlmFairValue,
   type LlmFairValueOptions,
+  ResolutionFairValue,
+  SentimentFairValue,
+  type SentimentFairValueOptions,
+  VegasFairValue,
+  type VegasFairValueResult,
+  type GameState,
+  GeminiFairValue,
+  type GeminiFairValueOptions,
 } from "./providers/index.js";
 
 // Risk
@@ -50,6 +62,18 @@ export {
   EdgeTradingStrategy,
   type EdgeTradingOptions,
 } from "./strategies/edge-trading.js";
+export {
+  ResolutionSniperStrategy,
+  type ResolutionSniperOptions,
+} from "./strategies/resolution-sniper.js";
+export {
+  MeanReversionStrategy,
+  type MeanReversionOptions,
+} from "./strategies/mean-reversion.js";
+export {
+  SportsMmStrategy,
+  type SportsMmOptions,
+} from "./strategies/sports-mm.js";
 
 // Signals (sports data enrichment)
 export * as espn from "./signals/espn.js";
