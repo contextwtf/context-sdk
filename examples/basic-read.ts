@@ -7,60 +7,51 @@
 import { ContextClient } from "@context-markets/sdk";
 
 async function main() {
-  const client = new ContextClient();
+  const ctx = new ContextClient();
 
   // Search markets
   console.log("--- Searching markets ---");
-  const { markets } = await client.searchMarkets({
-    query: "super bowl",
+  const { markets } = await ctx.markets.list({
+    status: "active",
     limit: 5,
   });
   console.log(`Found ${markets.length} markets:`);
   for (const m of markets) {
-    console.log(`  [${m.status}] ${m.title} (${m.id})`);
+    console.log(`  [${m.resolutionStatus}] ${m.question} (${m.id.slice(0, 10)}...)`);
   }
 
   if (markets.length === 0) {
-    console.log("No markets found. Try a different query.");
+    console.log("No markets found.");
     return;
   }
 
   const market = markets[0];
-  console.log(`\n--- Market: ${market.title} ---`);
+  console.log(`\n--- Market: ${market.question} ---`);
 
   // Get quotes
   console.log("\nQuotes:");
-  const quotes = await client.getQuotes(market.id);
-  for (const q of quotes) {
-    console.log(
-      `  ${q.outcome}: ${(q.probability * 100).toFixed(1)}%` +
-        (q.confidence ? ` (confidence: ${(q.confidence * 100).toFixed(0)}%)` : ""),
-    );
-  }
+  const quotes = await ctx.markets.quotes(market.id);
+  console.log(`  YES: bid=${quotes.yes.bid}¢ ask=${quotes.yes.ask}¢ last=${quotes.yes.last}¢`);
+  console.log(`  NO:  bid=${quotes.no.bid}¢ ask=${quotes.no.ask}¢ last=${quotes.no.last}¢`);
+  console.log(`  Spread: ${quotes.spread}¢`);
 
   // Get orderbook
   console.log("\nOrderbook:");
-  const book = await client.getOrderbook(market.id);
+  const book = await ctx.markets.orderbook(market.id);
   console.log(`  Bids: ${book.bids.length} levels`);
   if (book.bids[0]) console.log(`    Best bid: ${book.bids[0].price}¢ × ${book.bids[0].size}`);
   console.log(`  Asks: ${book.asks.length} levels`);
   if (book.asks[0]) console.log(`    Best ask: ${book.asks[0].price}¢ × ${book.asks[0].size}`);
 
   // Get oracle signals
-  console.log("\nOracle Signals:");
-  const signals = await client.getOracleSignals(market.id);
-  for (const s of signals) {
-    console.log(
-      `  [${s.source}] confidence: ${(s.confidence * 100).toFixed(0)}%` +
-        (s.outcome ? ` → ${s.outcome}` : ""),
-    );
+  console.log("\nOracle:");
+  const { oracle } = await ctx.markets.oracle(market.id);
+  if (oracle.summary) {
+    console.log(`  Decision: ${oracle.summary.decision}`);
+    console.log(`  Summary: ${oracle.summary.shortSummary}`);
   }
-
-  // Global activity
-  console.log("\n--- Global Activity (last 5) ---");
-  const activity = await client.getGlobalActivity();
-  for (const item of activity.slice(0, 5)) {
-    console.log(`  [${item.type}] ${item.timestamp}`);
+  if (oracle.sourcesMonitored) {
+    console.log(`  Sources: ${oracle.sourcesMonitored.join(", ")}`);
   }
 
   console.log("\nDone!");

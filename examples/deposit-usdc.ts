@@ -4,7 +4,7 @@
  * Usage:
  *   CONTEXT_API_KEY=... CONTEXT_PRIVATE_KEY=... npx tsx examples/deposit-usdc.ts [amount]
  */
-import { ContextTrader } from "@context-markets/sdk";
+import { ContextClient } from "@context-markets/sdk";
 import type { Hex } from "viem";
 
 async function main() {
@@ -17,22 +17,22 @@ async function main() {
     process.exit(1);
   }
 
-  const trader = new ContextTrader({
+  const ctx = new ContextClient({
     apiKey,
-    signer: { privateKey } as const,
+    signer: { privateKey },
   });
 
-  console.log(`Wallet: ${trader.address}`);
+  console.log(`Wallet: ${ctx.address}`);
 
-  const balance = await trader.getMyBalance();
-  console.log(`Balance before: settlement=${balance.usdc.settlementBalance}, wallet=${balance.usdc.walletBalance}`);
+  const balance = await ctx.portfolio.balance();
+  console.log(`Balance before: ${balance.usdc}`);
 
   console.log(`\nDepositing ${amount} USDC into Holdings...`);
-  const hash = await trader.depositUsdc(amount);
+  const hash = await ctx.account.deposit(amount);
   console.log(`Deposit tx: ${hash}`);
 
-  const balanceAfter = await trader.getMyBalance();
-  console.log(`\nBalance after: settlement=${balanceAfter.usdc.settlementBalance}, wallet=${balanceAfter.usdc.walletBalance}`);
+  const balanceAfter = await ctx.portfolio.balance();
+  console.log(`\nBalance after: ${balanceAfter.usdc}`);
 }
 
 main().catch(console.error);

@@ -1,44 +1,40 @@
 # Context Markets SDK
 
-TypeScript SDK and agent framework for trading on [Context Markets](https://context.wtf) — an AI-powered prediction market platform on Base.
+TypeScript SDK for trading on [Context Markets](https://context.markets) — an AI-powered prediction market platform on Base.
 
-## Packages
+For the full quickstart guide, API reference, and developer docs, visit [docs.context.markets/developers](https://docs.context.markets/developers).
 
-| Package | Description |
-|---------|-------------|
-| [`@context-markets/sdk`](packages/sdk) | Core SDK — market data, order placement, EIP-712 signing, wallet management |
-| [`@context-markets/agent`](packages/agent) | Agent runtime — pluggable strategies, risk management, automated trading loops |
-
-## Quick Start
+## Install
 
 ```bash
-npm install
-npm run build
+npm install @context-markets/sdk
 ```
+
+## Quick Start
 
 ### Read Market Data (no auth)
 
 ```ts
 import { ContextClient } from "@context-markets/sdk";
 
-const client = new ContextClient();
+const ctx = new ContextClient();
 
-const { markets } = await client.searchMarkets({ query: "elections", status: "active" });
-const orderbook = await client.getOrderbook(markets[0].id);
-const oracle = await client.getOracleSignals(markets[0].id);
+const { markets } = await ctx.markets.list({ query: "elections", status: "active" });
+const book = await ctx.markets.orderbook(markets[0].id);
+const oracle = await ctx.markets.oracle(markets[0].id);
 ```
 
 ### Place an Order
 
 ```ts
-import { ContextTrader } from "@context-markets/sdk";
+import { ContextClient } from "@context-markets/sdk";
 
-const trader = new ContextTrader({
+const ctx = new ContextClient({
   apiKey: process.env.CONTEXT_API_KEY!,
   signer: { privateKey: process.env.CONTEXT_PRIVATE_KEY! as `0x${string}` },
 });
 
-await trader.placeOrder({
+await ctx.orders.create({
   marketId: "0x...",
   outcome: "yes",
   side: "buy",
@@ -47,89 +43,58 @@ await trader.placeOrder({
 });
 ```
 
-### Run an Agent
+Need an API key? Message **@fieldviolence** on [X](https://x.com/fieldviolence) or Discord.
 
-```ts
-import { AgentRuntime, AdaptiveMmStrategy } from "@context-markets/agent";
+## API Reference
 
-const agent = new AgentRuntime({
-  trader: { apiKey, signer: { privateKey } },
-  strategy: new AdaptiveMmStrategy({
-    markets: { type: "ids", ids: ["0x..."] },
-    fairValueCents: 50,
-    levels: 3,
-    levelSpacingCents: 2,
-    levelSize: 10,
-    baseSpreadCents: 2,
-    skewPerContract: 0.1,
-    maxSkewCents: 5,
-    requoteDeltaCents: 1,
-    useOracleAnchor: true,
-  }),
-  risk: {
-    maxPositionSize: 200,
-    maxOpenOrders: 80,
-    maxOrderSize: 50,
-    maxLoss: -100,
-  },
-  intervalMs: 15_000,
-  dryRun: true,
-});
-
-await agent.start(); // Ctrl+C to stop
-```
-
-## Outcome Index Mapping
-
-**Important:** For binary YES/NO markets, the on-chain outcome index mapping is:
-
-| `outcomeIndex` | Outcome |
-|-----------------|---------|
-| **0** | **No** |
-| **1** | **Yes** |
-
-> **Note:** The public API docs currently list this as `0 = Yes, 1 = No` — that is incorrect.
-> The SDK handles this mapping internally: pass `outcome: "yes"` or `outcome: "no"` and the
-> SDK converts to the correct `outcomeIndex` for you.
-
-## SDK (`@context-markets/sdk`)
-
-### ContextClient (read-only)
+### `ctx.markets`
 
 | Method | Description |
 |--------|-------------|
-| `searchMarkets({ query, status })` | Search markets by keyword |
-| `getMarket(id)` | Get market details |
-| `getQuotes(marketId)` | Get bid/ask/last prices per outcome |
-| `getOrderbook(marketId)` | Get bid/ask ladder |
-| `getOracleSignals(marketId)` | Get oracle confidence signals |
-| `simulateTrade(params)` | Simulate trade for slippage |
-| `getPriceHistory(marketId, interval)` | OHLCV candle data |
-| `getMarketActivity(marketId)` | Market event feed |
-| `getGlobalActivity()` | Platform-wide activity |
-| `getBalance(address)` | Holdings balance for any address |
+| `list(params?)` | Search/filter markets |
+| `get(id)` | Get market details |
+| `quotes(marketId)` | Get bid/ask/last per outcome |
+| `orderbook(marketId)` | Get bid/ask ladder |
+| `simulate(marketId, params)` | Simulate trade for slippage |
+| `priceHistory(marketId, params?)` | OHLCV candle data |
+| `oracle(marketId)` | Get oracle resolution status |
+| `activity(marketId)` | Market event feed |
+| `globalActivity()` | Platform-wide activity |
 
-### ContextTrader (extends ContextClient)
+### `ctx.orders` (requires signer)
 
 | Method | Description |
 |--------|-------------|
-| `placeOrder(req)` | Place a signed limit order |
-| `cancelOrder(nonce)` | Cancel by nonce |
+| `list(params?)` | Query orders with filters |
+| `listAll(params?)` | Paginate through all orders |
+| `mine(marketId?)` | Your open orders |
+| `allMine(marketId?)` | Paginate all your orders |
+| `create(req)` | Place a signed limit order |
+| `cancel(nonce)` | Cancel by nonce |
 | `cancelReplace(cancelNonce, newOrder)` | Atomic cancel + replace |
-| `bulkCreateOrders(orders)` | Place multiple orders |
-| `bulkCancelOrders(nonces)` | Cancel multiple orders (max 20) |
-| `getMyOrders()` | Query your open orders |
-| `getMyPortfolio()` | Your positions across markets |
-| `getMyBalance()` | Your USDC balance in Holdings |
-| `depositUsdc(amount)` | Deposit USDC into Holdings |
-| `withdrawUsdc(amount)` | Withdraw USDC from Holdings |
-| `checkSetup()` | Check wallet approval status |
-| `setupWallet()` | Approve contracts for trading |
-| `mintTestUsdc(amount)` | Mint testnet USDC (Base Sepolia) |
+| `bulkCreate(orders)` | Place multiple orders |
+| `bulkCancel(nonces)` | Cancel multiple orders |
+
+### `ctx.portfolio`
+
+| Method | Description |
+|--------|-------------|
+| `get(address?)` | Positions across markets (defaults to signer) |
+| `balance(address?)` | USDC balance (defaults to signer) |
+
+### `ctx.account` (requires signer)
+
+| Method | Description |
+|--------|-------------|
+| `status()` | Check wallet approval status |
+| `setup()` | Approve contracts for trading |
+| `mintTestUsdc(amount?)` | Mint testnet USDC |
+| `deposit(amount)` | Deposit USDC into Holdings |
+| `withdraw(amount)` | Withdraw USDC from Holdings |
 | `mintCompleteSets(marketId, amount)` | Mint YES+NO token pairs |
 | `burnCompleteSets(marketId, amount)` | Burn pairs to recover USDC |
 
-### Pricing
+## Pricing
 
 Prices are in **cents** (1-99). Sizes are in **contracts**. The SDK handles on-chain encoding internally.
 
@@ -137,143 +102,24 @@ Prices are in **cents** (1-99). Sizes are in **contracts**. The SDK handles on-c
 45¢ = 45% probability = 0.45 USDC per contract
 ```
 
-## Agent Framework (`@context-markets/agent`)
-
-### Built-in Strategies
-
-| Strategy | Description |
-|----------|-------------|
-| `SimpleMmStrategy` | Quotes one bid/ask level around the orderbook midpoint |
-| `OracleTrackerStrategy` | Buys when oracle confidence exceeds market price by a threshold |
-| `AdaptiveMmStrategy` | Multi-level bid/ask ladders on YES + NO with inventory-aware skewing |
-| `EdgeTradingStrategy` | Directional trading when LLM fair value diverges from market price |
-
-### AdaptiveMmStrategy
-
-The most complete MM strategy — quotes depth on both outcomes and adjusts to order flow:
-
-- Quotes `N` levels of bids and asks on both YES and NO outcomes
-- YES fair value is configurable (or anchored to oracle); NO = 100 - YES
-- Tracks inventory per outcome independently
-- **Skews quotes** based on position: long inventory shifts quotes down to offload, short shifts up to accumulate
-- Only re-quotes when fair value or skew changes beyond a threshold
-
-### EdgeTradingStrategy
-
-LLM-powered directional trader that evaluates sports markets using real-time data:
-
-- Fetches **ESPN team stats** (record, PPG, recent form, streak) and **Vegas odds** (moneyline → implied probability)
-- Calls **Claude Haiku** with structured reasoning prompt to estimate fair value
-- Detects **live game state** (score, period, game clock) and adjusts probability accordingly
-- Places directional orders when edge >= threshold, with position limits and cooldowns
-- Handles **final games** deterministically (97¢ won / 3¢ lost) without LLM call
-
-### Fair Value Providers
-
-| Provider | Description |
-|----------|-------------|
-| `StaticFairValue` | Fixed value (e.g., 50¢) |
-| `MidpointFairValue` | Orderbook midpoint |
-| `OracleFairValue` | Oracle confidence signals |
-| `FlowWeightedFairValue` | Anchor + fill-driven drift with decay |
-| `ChainedFairValue` | Tries providers in order, first non-null wins |
-| `LlmFairValue` | Claude Haiku + ESPN + Vegas odds enrichment |
-
-### Custom Strategies
-
-Implement the `Strategy` interface:
-
-```ts
-import type { Strategy, MarketSelector, MarketSnapshot, AgentState, Action } from "@context-markets/agent";
-
-class MyStrategy implements Strategy {
-  name = "My Strategy";
-
-  async selectMarkets(): Promise<MarketSelector> {
-    return { type: "search", query: "politics", status: "active" };
-  }
-
-  async evaluate(markets: MarketSnapshot[], state: AgentState): Promise<Action[]> {
-    // Your logic here — return place_order, cancel_order, or no_action
-    return [{ type: "no_action", reason: "evaluating" }];
-  }
-}
-```
-
-### Risk Management
-
-The `AgentRuntime` enforces risk limits on every cycle:
-
-```ts
-risk: {
-  maxPositionSize: 200,    // Max contracts per outcome per market
-  maxOpenOrders: 80,       // Global open order limit
-  maxOrderSize: 50,        // Per-order size cap
-  maxLoss: -100,           // Stop-loss threshold (USDC)
-  maxOrdersPerMarketPerCycle: 20, // Rate limiting
-}
-```
+The SDK also handles outcome index mapping — pass `outcome: "yes"` or `outcome: "no"` and it converts to the correct on-chain `outcomeIndex` for you.
 
 ## Examples
 
-Run any example with:
-
 ```bash
-CONTEXT_API_KEY=ctx_pk_... CONTEXT_PRIVATE_KEY=0x... npx tsx examples/<file>.ts
+npx tsx examples/basic-read.ts
+CONTEXT_API_KEY=... CONTEXT_PRIVATE_KEY=0x... npx tsx examples/place-order.ts
 ```
 
 | Example | Description |
 |---------|-------------|
 | `basic-read.ts` | Search markets, read quotes/orderbook/oracle (no auth) |
 | `place-order.ts` | Place, query, and cancel orders |
-| `setup-trader-wallet.ts` | One-time wallet setup: approve contracts + deposit USDC |
+| `setup-trader-wallet.ts` | Check + auto-approve wallet for trading |
 | `deposit-usdc.ts` | Deposit USDC into Holdings contract |
-| `simple-mm-agent.ts` | Run the simple market maker (dry run) |
-| `oracle-tracker-agent.ts` | Run the oracle tracker (dry run, 3 cycles) |
-| `adaptive-mm-agent.ts` | Run the adaptive market maker (dry run or live) |
-| `random-trader-agent.ts` | Generate random order flow against existing liquidity |
-| `sports-trading-agent.ts` | LLM-powered sports trader with ESPN + Vegas enrichment |
 | `audit-book.ts` | Audit all active orderbooks and open orders |
-
-Set `DRY_RUN=false` for live trading on any agent example.
-
-### Environment Variables
-
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `CONTEXT_API_KEY` | Yes (trading) | API key for authenticated endpoints |
-| `CONTEXT_PRIVATE_KEY` | Yes (trading) | Wallet private key for signing orders |
-| `ANTHROPIC_API_KEY` | For LLM strategies | Claude API key for Haiku fair value |
-| `ODDS_API_KEY` | Optional | The Odds API key for Vegas lines |
-| `DRY_RUN` | Optional | Set to `false` for live trading (default: `true`) |
-| `MINT_AMOUNT` | Optional | Complete sets to mint per market on MM startup |
-
-## Architecture
-
-```
-@context-markets/sdk
-├── ContextClient          # Read-only API (markets, orderbook, oracle)
-├── ContextTrader          # Trading (orders, wallet, signing)
-├── EIP-712 Signing        # Off-chain order signatures (viem)
-└── Encoding               # Price/size unit conversions
-
-@context-markets/agent
-├── AgentRuntime           # Event loop: fetch → evaluate → risk check → execute
-├── Strategy (interface)   # Pluggable decision logic
-├── RiskManager            # Per-cycle limit enforcement (per-outcome position tracking)
-├── TradeLogger            # Structured logging with cycle tracking
-├── Signals
-│   ├── ESPN               # Team stats, standings, live game state
-│   └── Vegas              # Moneyline odds → implied probability
-├── Fair Value Providers
-│   ├── Static / Midpoint / Oracle / FlowWeighted / Chained
-│   └── LlmFairValue       # Claude Haiku with sports signal enrichment
-└── Built-in Strategies
-    ├── SimpleMmStrategy       # Spread around midpoint
-    ├── OracleTrackerStrategy  # Signal-following
-    ├── AdaptiveMmStrategy     # Multi-level, dual-side, inventory-aware MM
-    └── EdgeTradingStrategy    # LLM-powered directional trading
-```
+| `watch-markets.ts` | Poll and watch price changes on active markets |
+| `batch-markets.ts` | Fetch quotes, orderbooks, and oracle data in parallel |
 
 ## Network
 
@@ -288,10 +134,10 @@ Currently targeting **Base Sepolia** (chain ID 84532) testnet.
 ## Development
 
 ```bash
-npm install          # Install dependencies
-npm run build        # Build both packages
-npm run typecheck    # Type check without emitting
-npm run clean        # Remove dist/ folders
+bun install          # Install dependencies
+bun run build        # Build ESM + CJS + types
+bun run typecheck    # Type check
+bun run test         # Run tests
 ```
 
 Requires Node 18+.
