@@ -222,6 +222,9 @@ export class TelegramBridge implements ChatBridge {
 
     for (const [token, bot] of this.bots) {
       const isListener = token === this.listenerToken;
+      bot.catch((err: Error) => {
+        console.error("[telegram] Bot error (non-fatal):", err.message?.slice(0, 200));
+      });
       bot.start({
         onStart: () => {
           if (isListener) {
@@ -230,6 +233,8 @@ export class TelegramBridge implements ChatBridge {
             console.log(`[telegram] Agent bot started`);
           }
         },
+      }).catch((err: Error) => {
+        console.error("[telegram] Bot polling failed (non-fatal):", err.message?.slice(0, 200));
       });
     }
   }
