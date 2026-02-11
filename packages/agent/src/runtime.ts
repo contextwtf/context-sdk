@@ -428,11 +428,24 @@ export class AgentRuntime {
         percentFilled: o.percentFilled ?? 0,
       }));
 
-    // Normalize balance — API may return usdc as string, bigint, or undefined
+    // Normalize balance — API returns usdc as a rich object:
+    //   { balance: "4250000000", settlementBalance: "...", walletBalance: "..." }
+    // where values are raw 6-decimal strings. We need USDC as a human-readable number.
     const rawBal = balance as any;
+    let usdcAmount = 0;
+    if (rawBal.usdc != null) {
+      if (typeof rawBal.usdc === "object" && rawBal.usdc !== null) {
+        // Rich object from API — use settlementBalance (Holdings) or balance
+        const raw = rawBal.usdc.settlementBalance ?? rawBal.usdc.balance ?? "0";
+        usdcAmount = Number(raw) / 1e6;
+      } else {
+        // Simple number or string
+        usdcAmount = Number(rawBal.usdc) || 0;
+      }
+    }
     const normalizedBalance = {
       address: rawBal.address ?? (this.trader?.address || ""),
-      usdc: Number(rawBal.usdc) || 0,
+      usdc: usdcAmount,
     };
 
     return { portfolio: normalizedPortfolio, openOrders, balance: normalizedBalance };

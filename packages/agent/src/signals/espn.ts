@@ -318,15 +318,28 @@ export async function getUpcomingGames(league: string): Promise<UpcomingGame[] |
   if (!leagueInfo) return null;
 
   try {
-    // Pass today's date to avoid stale yesterday's scoreboard
-    const today = new Date().toISOString().slice(0, 10).replace(/-/g, ""); // YYYYMMDD
-    const url = `${ESPN_API}/${leagueInfo.sport}/${leagueInfo.league}/scoreboard?dates=${today}`;
+    // Use US Eastern time for the date — most sports games happen in US evenings,
+    // so UTC date rolls over mid-game (e.g., 7 PM EST = midnight UTC next day).
+    // Query both Eastern "today" and the UTC date to catch games on both.
+    const now = new Date();
+    const eastern = new Date(now.toLocaleString("en-US", { timeZone: "America/New_York" }));
+    const easternDate = `${eastern.getFullYear()}${String(eastern.getMonth() + 1).padStart(2, "0")}${String(eastern.getDate()).padStart(2, "0")}`;
+    const utcDate = now.toISOString().slice(0, 10).replace(/-/g, "");
+
+    // Fetch both dates if they differ (evening games after UTC midnight)
+    const datesToQuery = [easternDate];
+    if (utcDate !== easternDate) datesToQuery.push(utcDate);
+
+    const games: UpcomingGame[] = [];
+    const seenGameIds = new Set<string>();
+
+    for (const dateStr of datesToQuery) {
+    const url = `${ESPN_API}/${leagueInfo.sport}/${leagueInfo.league}/scoreboard?dates=${dateStr}`;
     const response = await fetch(url);
-    if (!response.ok) return null;
+    if (!response.ok) continue;
 
     const data = await response.json();
     const events = data.events || [];
-    const games: UpcomingGame[] = [];
 
     for (const event of events) {
       const competition = event.competitions?.[0];
@@ -364,8 +377,12 @@ export async function getUpcomingGames(league: string): Promise<UpcomingGame[] |
         game.statusDetail = event.status?.type?.shortDetail;
       }
 
-      games.push(game);
+      if (!seenGameIds.has(game.gameId)) {
+        seenGameIds.add(game.gameId);
+        games.push(game);
+      }
     }
+    } // end datesToQuery loop
 
     return games;
   } catch (error) {
