@@ -122,19 +122,24 @@ async function main() {
 
   let chatBridge: ChatBridge;
 
-  const telegramToken = process.env.TELEGRAM_BOT_TOKEN;
   const telegramChatId = process.env.TELEGRAM_CHAT_ID;
+  const chiefToken = process.env.TELEGRAM_BOT_TOKEN_CHIEF ?? process.env.TELEGRAM_BOT_TOKEN;
+  const deskToken = process.env.TELEGRAM_BOT_TOKEN_DESK ?? process.env.TELEGRAM_BOT_TOKEN_SCANNER;
 
-  if (telegramToken && telegramChatId) {
+  if (chiefToken && telegramChatId) {
     chatBridge = new TelegramBridge({
-      fallbackToken: telegramToken,
+      botTokens: {
+        chief: chiefToken,
+        ...(deskToken ? { desk: deskToken } : {}),
+      } as any,
+      fallbackToken: chiefToken,
       chatId: telegramChatId,
       verbosity: "normal",
     });
-    console.log("[team-v2] Telegram bridge configured");
+    console.log(`[team-v2] Telegram: Chief + ${deskToken ? "Desk" : "single-bot"}`);
   } else {
     chatBridge = new ConsoleChatBridge();
-    console.log("[team-v2] Using console bridge (set TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID for Telegram)");
+    console.log("[team-v2] Using console bridge (set TELEGRAM_BOT_TOKEN_CHIEF + TELEGRAM_CHAT_ID for Telegram)");
   }
 
   // ─── Determine Models ───
@@ -193,7 +198,7 @@ async function main() {
   console.log(pad("Arch:      ", "Event-driven"));
   console.log(pad("Fast Path: ", "<100ms mechanical"));
   console.log(pad("Chief:     ", "Event-triggered LLM"));
-  console.log(pad("Chat:      ", telegramToken ? "Telegram" : "Console"));
+  console.log(pad("Chat:      ", chiefToken ? (deskToken ? "Telegram (2-bot)" : "Telegram") : "Console"));
   console.log(pad("Search:    ", process.env.TAVILY_API_KEY ? "Enabled" : "DISABLED"));
   console.log(pad("Routine:   ", routineModel));
   console.log(pad("Escalate:  ", escalationModel.slice(0, 22)));

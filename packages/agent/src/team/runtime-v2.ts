@@ -150,7 +150,7 @@ export class RuntimeV2 {
         // Fast path handles immediate responses (halt, resume, status)
         const ack = this.fastPath.processHumanMessage(content);
         if (ack) {
-          this.chatBridge!.send("chief" as any, "Chief", ack.ack).catch(() => {});
+          this.chatBridge!.send("chief", "Chief", ack.ack).catch(() => {});
           return; // Fast path handled it
         }
 
@@ -163,7 +163,7 @@ export class RuntimeV2 {
         this.queue.push(event, getEventPriority(event), getCoalesceKey(event));
 
         // Instant ack before Chief responds
-        this.chatBridge!.send("chief" as any, "Chief", "Got it, looking into this...").catch(() => {});
+        this.chatBridge!.send("chief", "Chief", "Got it, looking into this...").catch(() => {});
       });
 
       try {
@@ -188,9 +188,11 @@ export class RuntimeV2 {
       this.queue.push(event, getEventPriority(event), getCoalesceKey(event));
     }, this.heartbeatIntervalMs);
 
-    // Announce
+    // Announce on both bots
     if (this.chatBridge) {
-      await this.chatBridge.send("chief" as any, "Chief", "Team v2 online. Event-driven mode active.");
+      const mode = this.dryRun ? "DRY RUN" : "LIVE";
+      await this.chatBridge.send("desk", "Desk", `⚡ <b>MM Team v2 online</b> (${mode})`).catch(() => {});
+      await this.chatBridge.send("chief", "Chief", `Online. Event-driven mode, ${mode}.`).catch(() => {});
     }
 
     // Start Chief event loop (blocks until stop() is called)
@@ -241,9 +243,10 @@ export class RuntimeV2 {
       }
     }
 
-    // 6. Notify chat
+    // 6. Notify chat (both bots)
     if (this.chatBridge) {
-      await this.chatBridge.send("chief" as any, "Chief", "Team v2 offline. All orders cancelled.").catch(() => {});
+      await this.chatBridge.send("desk", "Desk", `🔴 <b>MM Team v2 offline</b>`).catch(() => {});
+      await this.chatBridge.send("chief", "Chief", "Offline. All orders cancelled.").catch(() => {});
       await this.chatBridge.stop();
     }
 
@@ -254,6 +257,7 @@ export class RuntimeV2 {
 
   private handleDataRefresh(snapshots: MarketSnapshot[]): void {
     // Initialize markets we haven't seen before
+    const newMarkets: string[] = [];
     for (const snapshot of snapshots) {
       const marketId = (snapshot.market as Record<string, any>).id;
       if (!marketId) continue;
@@ -261,7 +265,9 @@ export class RuntimeV2 {
       if (!this.state.markets.has(marketId)) {
         this.state.addMarket(marketId, snapshot as any);
         const mkt = this.state.markets.get(marketId);
-        console.log(`[runtime-v2] New market: ${marketId.slice(0, 8)} — "${mkt?.name?.slice(0, 60) ?? '?'}"`);
+        const name = mkt?.name ?? "?";
+        console.log(`[runtime-v2] New market: ${marketId.slice(0, 8)} — "${name.slice(0, 60)}"`);
+        newMarkets.push(name.length > 40 ? name.slice(0, 37) + "..." : name);
 
         const event: TeamEvent = {
           type: "new_market",
@@ -272,14 +278,40 @@ export class RuntimeV2 {
       }
     }
 
+    // Desk activity: new markets discovered
+    if (newMarkets.length > 0 && this.chatBridge) {
+      const marketList = newMarkets.map((n) => `  ${n}`).join("\n");
+      this.chatBridge.send("desk", "Desk",
+        `🆕 <b>${newMarkets.length} new market${newMarkets.length > 1 ? "s" : ""}</b>\n${marketList}`
+      ).catch(() => {});
+    }
+
     // Run fast path on all snapshots
     const actions = this.fastPath.processDataRefresh(snapshots as any);
 
-    // Execute actions
+    // Execute fast path actions + collect for desk activity
+    const fpActions: string[] = [];
     for (const action of actions) {
       if (action.type === "cancel_replace") {
+        const mkt = this.state.markets.get(action.marketId);
+        const name = mkt?.name ?? action.marketId.slice(0, 8);
+        const shortName = name.length > 30 ? name.slice(0, 27) + "..." : name;
+        const status = mkt?.status ?? "?";
+        const bid = action.quotes.find((q) => q.side === "buy");
+        const ask = action.quotes.find((q) => q.side === "sell");
+        if (status === "provisional_urgent" || status === "provisional") {
+          const tierLabel = status === "provisional_urgent" ? "T4" : "T3";
+          fpActions.push(`  ${tierLabel} ${shortName} → ${mkt?.fairValue ?? "?"}¢`);
+        }
         this.executeAction(action);
       }
+    }
+
+    // Desk activity: fast path repricing (only T3/T4 — T1/T2 are too noisy)
+    if (fpActions.length > 0 && this.chatBridge) {
+      this.chatBridge.send("desk", "Desk",
+        `⚡ <b>Fast path</b>\n${fpActions.join("\n")}`
+      ).catch(() => {});
     }
 
     // Push data_refresh event for Chief (coalesced — only latest matters)
@@ -291,11 +323,15 @@ export class RuntimeV2 {
 
   private async executeAction(action: FastPathAction): Promise<void> {
     if (action.type !== "cancel_replace") return;
+
+    const market = this.state.markets.get(action.marketId);
+    const marketName = market?.name ?? action.marketId.slice(0, 8);
+    const shortName = marketName.length > 30 ? marketName.slice(0, 27) + "..." : marketName;
+    const bid = action.quotes.find((q) => q.side === "buy") ?? null;
+    const ask = action.quotes.find((q) => q.side === "sell") ?? null;
+
     if (this.dryRun) {
       console.log(`[runtime-v2] DRY RUN: cancel_replace on ${action.marketId} — ${action.quotes.length} quotes`);
-      // Still update state in dry run mode
-      const bid = action.quotes.find((q) => q.side === "buy") ?? null;
-      const ask = action.quotes.find((q) => q.side === "sell") ?? null;
       this.state.setQuotes(
         action.marketId,
         bid ? { price: bid.priceCents, size: bid.size } : null,
@@ -305,8 +341,6 @@ export class RuntimeV2 {
     }
 
     if (!this.trader) return;
-
-    const market = this.state.markets.get(action.marketId);
     if (!market) return;
 
     for (const quote of action.quotes) {
@@ -361,7 +395,21 @@ export class RuntimeV2 {
         market.quotedAt = Date.now();
       } catch (err) {
         console.error(`[runtime-v2] Order execution error (${action.marketId}, ${quote.side}):`, err instanceof Error ? err.message : err);
+        if (this.chatBridge) {
+          this.chatBridge.send("desk", "Desk",
+            `⚠️ Order error: ${shortName} ${quote.side} — ${(err instanceof Error ? err.message : String(err)).slice(0, 80)}`
+          ).catch(() => {});
+        }
       }
+    }
+
+    // Desk activity: live order execution
+    if (this.chatBridge) {
+      const bidStr = bid ? `${bid.priceCents}¢ x${bid.size}` : "—";
+      const askStr = ask ? `${ask.priceCents}¢ x${ask.size}` : "—";
+      this.chatBridge.send("desk", "Desk",
+        `📝 <b>Order</b> ${shortName}\n  ${bidStr} / ${askStr}`
+      ).catch(() => {});
     }
   }
 }

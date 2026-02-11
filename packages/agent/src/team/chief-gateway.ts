@@ -113,6 +113,8 @@ export class ChiefGateway {
   private running = false;
   private cycleCount = 0;
   private scannerTaskCounter = 0;
+  /** Collect FV updates within a cycle to send as one batched desk message. */
+  private cycleFvUpdates: Array<{ name: string; fv: number; conf: number; reasoning: string; bid: string; ask: string }> = [];
 
   constructor(
     state: OrderBookState,
@@ -191,6 +193,9 @@ export class ChiefGateway {
       { role: "user", content: context },
     ];
 
+    // Reset batched FV updates for this cycle
+    this.cycleFvUpdates = [];
+
     try {
       const response = await client.chat({
         model: modelName,
@@ -206,6 +211,11 @@ export class ChiefGateway {
       // Execute directives
       for (const directive of directives) {
         await this.executeDirective(directive);
+      }
+
+      // Flush batched FV updates as one desk message
+      if (this.cycleFvUpdates.length > 0) {
+        this.flushFvUpdates();
       }
     } catch (err) {
       console.error(`[chief] LLM call failed:`, err instanceof Error ? err.message : err);
@@ -306,13 +316,10 @@ export class ChiefGateway {
 
       const rawDirs = parsed.directives ?? [];
 
-      // Send reasoning to chat if present
-      if (parsed.reasoning && this.chatBridge) {
-        // Don't send reasoning for every cycle — only when notable
-        if (this.cycleCount % 5 === 0 || parsed.directives?.length > 0) {
-          const reasoning = parsed.reasoning.slice(0, 300);
-          this.sendChat(reasoning).catch(() => {});
-        }
+      // Send reasoning to Chief bot when there are notable directives
+      if (parsed.reasoning && this.chatBridge && parsed.directives?.length > 0) {
+        const reasoning = parsed.reasoning.slice(0, 500);
+        this.sendChat(reasoning).catch(() => {});
       }
 
       const directives: ChiefDirective[] = [];
@@ -398,12 +405,16 @@ export class ChiefGateway {
       case "set_fair_value": {
         const { fairValue, confidence, reasoning } = directive;
         const marketId = this.resolveMarketId(directive.marketId);
+        const market = this.state.markets.get(marketId);
+        const marketName = market?.name ?? marketId.slice(0, 8);
+        const shortName = marketName.length > 40 ? marketName.slice(0, 37) + "..." : marketName;
         console.log(`[chief] Set FV: ${marketId.slice(0, 8)} → ${fairValue}¢ (conf: ${(confidence * 100).toFixed(0)}%) — ${reasoning}`);
 
         this.state.setFairValue(marketId, fairValue, confidence, "chief");
 
         // Compute and validate new quotes
-        const market = this.state.markets.get(marketId);
+        let bidStr = "—";
+        let askStr = "—";
         if (market && !this.state.isHalted(marketId)) {
           const quotes = computeQuotes(buildPricerParams(
             fairValue,
@@ -424,7 +435,6 @@ export class ChiefGateway {
           if (!spreadOk.allow) {
             console.log(`[chief] Risk: spread rejected for ${marketId}: ${spreadOk.reason}`);
           } else {
-            // Apply risk adjustments
             const validQuotes = quotes.map((q, i) => {
               const d = decisions[i];
               if (d.allow) return q;
@@ -433,16 +443,17 @@ export class ChiefGateway {
             }).filter((q): q is NonNullable<typeof q> => q !== null);
 
             if (validQuotes.length > 0) {
-              // Update state with new quotes
               const bid = validQuotes.find((q) => q.side === "buy") ?? null;
               const ask = validQuotes.find((q) => q.side === "sell") ?? null;
+              bidStr = bid ? `${bid.priceCents}¢ x${bid.size}` : "—";
+              askStr = ask ? `${ask.priceCents}¢ x${ask.size}` : "—";
+
               this.state.setQuotes(
                 marketId,
                 bid ? { price: bid.priceCents, size: bid.size } : null,
                 ask ? { price: ask.priceCents, size: ask.size } : null,
               );
 
-              // Execute orders via RuntimeV2 callback
               if (this.config.onAction) {
                 this.config.onAction({
                   type: "cancel_replace",
@@ -453,6 +464,16 @@ export class ChiefGateway {
             }
           }
         }
+
+        // Batch for desk activity message
+        this.cycleFvUpdates.push({
+          name: shortName,
+          fv: fairValue,
+          conf: Math.round(confidence * 100),
+          reasoning: reasoning.slice(0, 120),
+          bid: bidStr,
+          ask: askStr,
+        });
         break;
       }
 
@@ -480,6 +501,15 @@ export class ChiefGateway {
           .filter((c): c is NonNullable<typeof c> => c !== null);
         console.log(`[chief] Scanner contexts: ${marketContexts.length}/${dispatch.markets.length} — ${marketContexts.map(c => `"${c.name}"`).join(", ")}`);
 
+        // Desk activity: scanner dispatched
+        const scanMarketNames = marketContexts.map((c) => {
+          const n = c.name.length > 35 ? c.name.slice(0, 32) + "..." : c.name;
+          return `  ${n}`;
+        }).join("\n");
+        this.sendDesk(
+          `🔍 <b>${dispatch.taskId}</b> dispatched\n${scanMarketNames}`
+        ).catch(() => {});
+
         // Fire and forget — result comes back as scanner_result event
         dispatchScanner(
           dispatch,
@@ -496,9 +526,29 @@ export class ChiefGateway {
           };
           this.queue.push(event, getEventPriority(event), getCoalesceKey(event));
           console.log(`[scanner] ${result.taskId}: ${result.findings.length} findings in ${result.durationMs}ms`);
+
+          // Desk activity: scanner returned
+          const durationSec = Math.round(result.durationMs / 1000);
+          if (result.findings.length > 0) {
+            const findingLines = result.findings.map((f) => {
+              const mkt = this.state.markets.get(f.marketId);
+              const name = mkt?.name ?? f.marketId.slice(0, 8);
+              const shortName = name.length > 30 ? name.slice(0, 27) + "..." : name;
+              const fvStr = f.suggestedFairValue !== undefined ? ` → ${f.suggestedFairValue}¢` : "";
+              return `  ${shortName}${fvStr}`;
+            }).join("\n");
+            this.sendDesk(
+              `📡 <b>${result.taskId}</b> returned (${durationSec}s)\n${findingLines}`
+            ).catch(() => {});
+          } else {
+            this.sendDesk(
+              `📡 <b>${result.taskId}</b> — no findings (${durationSec}s)`
+            ).catch(() => {});
+          }
         }).catch((err) => {
           this.state.completePendingTask(dispatch.taskId, "failed");
           console.error(`[scanner] ${dispatch.taskId} failed:`, err instanceof Error ? err.message : err);
+          this.sendDesk(`⚠️ <b>${dispatch.taskId}</b> failed: ${(err instanceof Error ? err.message : String(err)).slice(0, 100)}`).catch(() => {});
         });
         break;
       }
@@ -511,9 +561,11 @@ export class ChiefGateway {
 
       case "halt_market": {
         const haltId = this.resolveMarketId(directive.marketId);
+        const haltMkt = this.state.markets.get(haltId);
+        const haltName = haltMkt?.name ?? haltId.slice(0, 8);
         console.log(`[chief] Halt market: ${haltId.slice(0, 8)} — ${directive.reason}`);
         this.state.haltMarket(haltId, directive.reason);
-        await this.sendChat(`Market halted: ${haltId.slice(0, 8)} — ${directive.reason}`);
+        await this.sendChat(`🛑 <b>Market halted</b>\n${haltName}\n${directive.reason}`);
         break;
       }
 
@@ -560,10 +612,12 @@ export class ChiefGateway {
 
     if (critical.length > 0) {
       console.log(`[invariants] ${critical.length} CRITICAL, ${warnings.length} warnings`);
+      const critLines: string[] = [];
       for (const v of critical) {
         console.log(`[invariants] CRITICAL: ${v.rule} — ${v.details} ${v.marketId ? `(${v.marketId})` : ""}`);
+        const mktName = v.marketId ? (this.state.markets.get(v.marketId)?.name ?? v.marketId.slice(0, 8)) : "";
+        critLines.push(`  ${v.rule}${mktName ? ` (${mktName.slice(0, 25)})` : ""}`);
 
-        // Push critical violations as events for next cycle
         const event: TeamEvent = {
           type: "invariant_violation",
           rule: v.rule,
@@ -573,6 +627,7 @@ export class ChiefGateway {
         };
         this.queue.push(event, 0, getCoalesceKey(event));
       }
+      this.sendDesk(`🚨 <b>${critical.length} critical violation${critical.length > 1 ? "s" : ""}</b>\n${critLines.join("\n")}`).catch(() => {});
     } else if (warnings.length > 0) {
       console.log(`[invariants] ${warnings.length} warnings`);
     }
@@ -593,15 +648,46 @@ export class ChiefGateway {
 
   // ─── Chat ───
 
+  /** Send a message as Chief (conversational bot). */
   private async sendChat(message: string): Promise<void> {
     if (this.chatBridge) {
       try {
-        await this.chatBridge.send("chief" as any, "Chief", message);
+        await this.chatBridge.send("chief", "Chief", message);
       } catch (err) {
         console.error("[chief] Chat send error:", err);
       }
     }
     console.log(`[chief] ${message.slice(0, 100)}`);
+  }
+
+  /** Send a message as Desk (activity feed bot). */
+  private async sendDesk(message: string): Promise<void> {
+    if (this.chatBridge) {
+      try {
+        await this.chatBridge.send("desk", "Desk", message);
+      } catch (err) {
+        console.error("[desk] Activity send error:", err);
+      }
+    }
+  }
+
+  /** Flush batched FV updates as a single desk message. */
+  private flushFvUpdates(): void {
+    const updates = this.cycleFvUpdates;
+    if (updates.length === 0) return;
+
+    // Sort by FV descending for readability
+    updates.sort((a, b) => b.fv - a.fv);
+
+    const lines = updates.map((u) => {
+      return `  <b>${u.fv}¢</b> ${u.name} (${u.conf}%)\n    ${u.bid} / ${u.ask}`;
+    });
+
+    const header = updates.length === 1
+      ? `📊 <b>Fair value updated</b>`
+      : `📊 <b>${updates.length} fair values set</b>`;
+
+    this.sendDesk(`${header}\n${lines.join("\n")}`).catch(() => {});
   }
 }
 

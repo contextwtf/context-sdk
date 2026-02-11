@@ -9,7 +9,7 @@
 
 // ─── Core Types ───
 
-export type AgentRole = "chief" | "scanner" | "pricer" | "risk" | "closer";
+export type AgentRole = "chief" | "scanner" | "pricer" | "risk" | "closer" | "desk";
 export type SignalPriority = "halt" | "override" | "urgent" | "alert" | "info";
 export type SignalType = "news" | "score" | "oracle" | "price" | "risk" | "directive" | "human";
 
@@ -133,6 +133,7 @@ export class TeamBoard {
         pricer: defaultStatus(),
         risk: defaultStatus(),
         closer: defaultStatus(),
+        desk: defaultStatus(),
       },
       inboxes: {
         chief: [],
@@ -140,6 +141,7 @@ export class TeamBoard {
         pricer: [],
         risk: [],
         closer: [],
+        desk: [],
       },
       humanMessages: [],
       suppressedBreakers: new Set(),
