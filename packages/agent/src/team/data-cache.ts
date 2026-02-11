@@ -28,6 +28,8 @@ export interface SharedDataCacheOptions {
   searchQuery?: string;
   /** Max markets to track. Default: 20. */
   maxMarkets?: number;
+  /** Callback fired after each successful poll with new snapshots. Used by v2 runtime. */
+  onRefresh?: (snapshots: MarketSnapshot[]) => void;
 }
 
 // ─── SharedDataCache ───
@@ -37,6 +39,7 @@ export class SharedDataCache {
   private readonly pollIntervalMs: number;
   private readonly searchQuery: string;
   private readonly maxMarkets: number;
+  private readonly onRefresh?: (snapshots: MarketSnapshot[]) => void;
 
   private snapshots = new Map<string, MarketSnapshot>();
   private pollTimer: ReturnType<typeof setInterval> | null = null;
@@ -50,6 +53,7 @@ export class SharedDataCache {
     this.pollIntervalMs = options.pollIntervalMs ?? 30_000;
     this.searchQuery = options.searchQuery ?? "";
     this.maxMarkets = options.maxMarkets ?? 20;
+    this.onRefresh = options.onRefresh;
   }
 
   /** Start polling. Runs an initial poll immediately. */
@@ -155,6 +159,15 @@ export class SharedDataCache {
       this.lastPollAt = Date.now();
 
       console.log(`[cache] Poll complete: ${newSnapshots.size} markets (${marketIds.length} requested)`);
+
+      // 4. Fire onRefresh callback (v2 runtime wires this to FastPath + EventQueue)
+      if (this.onRefresh && newSnapshots.size > 0) {
+        try {
+          this.onRefresh(Array.from(newSnapshots.values()));
+        } catch (err) {
+          console.error("[cache] onRefresh callback error:", err);
+        }
+      }
     } catch (err) {
       console.error("[cache] Poll error:", err instanceof Error ? err.message : err);
     } finally {
