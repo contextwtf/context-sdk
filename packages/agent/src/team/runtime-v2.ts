@@ -106,6 +106,7 @@ export class RuntimeV2 {
         llm: llmConfig,
         scannerTools: options.scannerTools ?? [],
         executeTool: options.executeTool ?? (async () => "No tools configured"),
+        onAction: (action) => this.executeAction(action),
       },
       this.chatBridge,
     );
@@ -165,7 +166,11 @@ export class RuntimeV2 {
         this.chatBridge!.send("chief" as any, "Chief", "Got it, looking into this...").catch(() => {});
       });
 
-      await this.chatBridge.start();
+      try {
+        await this.chatBridge.start();
+      } catch (err) {
+        console.error("[runtime-v2] Chat bridge failed to start (non-fatal):", err instanceof Error ? err.message : err);
+      }
     }
 
     // Start data cache
@@ -255,12 +260,13 @@ export class RuntimeV2 {
 
       if (!this.state.markets.has(marketId)) {
         this.state.addMarket(marketId, snapshot as any);
-        console.log(`[runtime-v2] New market: ${marketId}`);
+        const mkt = this.state.markets.get(marketId);
+        console.log(`[runtime-v2] New market: ${marketId.slice(0, 8)} — "${mkt?.name?.slice(0, 60) ?? '?'}"`);
 
         const event: TeamEvent = {
           type: "new_market",
           marketId,
-          name: (snapshot.market as Record<string, any>).title ?? marketId.slice(0, 8),
+          name: (snapshot.market as Record<string, any>).question ?? (snapshot.market as Record<string, any>).title ?? marketId.slice(0, 8),
         };
         this.queue.push(event, getEventPriority(event), getCoalesceKey(event));
       }

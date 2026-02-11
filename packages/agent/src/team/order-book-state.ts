@@ -116,7 +116,7 @@ export class OrderBookState {
 
     const state: MarketState = {
       id,
-      name: market.title ?? market.name ?? id.slice(0, 8),
+      name: market.question ?? market.title ?? market.name ?? id.slice(0, 8),
       resolutionCriteria: market.resolutionCriteria ?? "",
       tier,
       category,

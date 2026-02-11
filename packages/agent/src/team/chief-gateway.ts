@@ -17,7 +17,9 @@ import type {
 import { createLlmClient } from "../llm/client.js";
 import type {
   ChiefDirective,
+  FastPathAction,
   LlmConfig,
+  Quote,
   QueuedEvent,
   ScannerDispatch,
   TeamEvent,
@@ -94,6 +96,7 @@ interface ChiefConfig {
   llm: LlmConfig;
   scannerTools: ToolDefinition[];
   executeTool: (name: string, input: Record<string, unknown>) => Promise<string>;
+  onAction?: (action: FastPathAction) => void;
 }
 
 // ─── ChiefGateway ───
@@ -193,7 +196,7 @@ export class ChiefGateway {
         model: modelName,
         system: CHIEF_SYSTEM,
         messages,
-        maxTokens: 2048,
+        maxTokens: 8192,
       });
 
       // Parse directives
@@ -230,15 +233,9 @@ export class ChiefGateway {
         }
       }
 
-      // Conflicting scanner findings
-      if (event.type === "scanner_result" && event.findings.length > 1) {
-        const fvs = event.findings
-          .map((f) => f.suggestedFairValue)
-          .filter((v): v is number => v !== undefined);
-        if (fvs.length >= 2) {
-          const spread = Math.max(...fvs) - Math.min(...fvs);
-          if (spread > 20) return true; // Conflicting signals
-        }
+      // Scanner results with actual findings — always escalate for FV decisions
+      if (event.type === "scanner_result" && event.findings.length > 0) {
+        return true;
       }
 
       // Large position at risk
@@ -337,15 +334,17 @@ export class ChiefGateway {
           case "dispatch_scanner":
             if (d.markets && d.focus) {
               const taskId = `scan-${++this.scannerTaskCounter}`;
+              // Resolve truncated market IDs from LLM
+              const resolvedMarkets = (d.markets as string[]).map((id) => this.resolveMarketId(id));
               // Scale timeout and tool calls by number of markets
-              const marketCount = d.markets.length;
+              const marketCount = resolvedMarkets.length;
               const maxToolCalls = Math.max(this.config.llm.maxToolCallsPerCycle, marketCount * 2);
               const timeout = Math.max(60_000, marketCount * 10_000);
               directives.push({
                 type: "dispatch_scanner",
                 dispatch: {
                   taskId,
-                  markets: d.markets,
+                  markets: resolvedMarkets,
                   focus: d.focus,
                   tools: d.tools ?? ["web_search"],
                   maxToolCalls,
@@ -397,8 +396,9 @@ export class ChiefGateway {
   private async executeDirective(directive: ChiefDirective): Promise<void> {
     switch (directive.type) {
       case "set_fair_value": {
-        const { marketId, fairValue, confidence, reasoning } = directive;
-        console.log(`[chief] Set FV: ${marketId} → ${fairValue}¢ (conf: ${(confidence * 100).toFixed(0)}%) — ${reasoning}`);
+        const { fairValue, confidence, reasoning } = directive;
+        const marketId = this.resolveMarketId(directive.marketId);
+        console.log(`[chief] Set FV: ${marketId.slice(0, 8)} → ${fairValue}¢ (conf: ${(confidence * 100).toFixed(0)}%) — ${reasoning}`);
 
         this.state.setFairValue(marketId, fairValue, confidence, "chief");
 
@@ -411,6 +411,7 @@ export class ChiefGateway {
             market.position,
             this.state.limits,
           ));
+          console.log(`[chief] Quotes for ${marketId}: ${quotes.map(q => `${q.side} ${q.priceCents}¢ x${q.size}`).join(", ")}`);
 
           const riskState = {
             markets: this.state.markets,
@@ -420,7 +421,9 @@ export class ChiefGateway {
           };
           const { decisions, spreadOk } = riskCheckAll(quotes, marketId, riskState, this.state.limits);
 
-          if (spreadOk.allow) {
+          if (!spreadOk.allow) {
+            console.log(`[chief] Risk: spread rejected for ${marketId}: ${spreadOk.reason}`);
+          } else {
             // Apply risk adjustments
             const validQuotes = quotes.map((q, i) => {
               const d = decisions[i];
@@ -439,14 +442,14 @@ export class ChiefGateway {
                 ask ? { price: ask.priceCents, size: ask.size } : null,
               );
 
-              // Emit reprice_needed so runtime executes the orders
-              const event: TeamEvent = {
-                type: "reprice_needed",
-                marketId,
-                reason: `Chief set FV ${fairValue}¢`,
-                urgent: false,
-              };
-              // Don't push to queue (we're already processing) — just update state
+              // Execute orders via RuntimeV2 callback
+              if (this.config.onAction) {
+                this.config.onAction({
+                  type: "cancel_replace",
+                  marketId,
+                  quotes: validQuotes,
+                });
+              }
             }
           }
         }
@@ -468,10 +471,14 @@ export class ChiefGateway {
         const marketContexts = dispatch.markets
           .map((id) => {
             const m = this.state.markets.get(id);
-            if (!m) return null;
+            if (!m) {
+              console.log(`[chief] Scanner dispatch: no state for market ${id.slice(0, 10)}`);
+              return null;
+            }
             return { id: m.id, name: m.name, resolutionCriteria: m.resolutionCriteria, category: m.category };
           })
           .filter((c): c is NonNullable<typeof c> => c !== null);
+        console.log(`[chief] Scanner contexts: ${marketContexts.length}/${dispatch.markets.length} — ${marketContexts.map(c => `"${c.name}"`).join(", ")}`);
 
         // Fire and forget — result comes back as scanner_result event
         dispatchScanner(
@@ -503,15 +510,17 @@ export class ChiefGateway {
       }
 
       case "halt_market": {
-        console.log(`[chief] Halt market: ${directive.marketId} — ${directive.reason}`);
-        this.state.haltMarket(directive.marketId, directive.reason);
-        await this.sendChat(`Market halted: ${directive.marketId} — ${directive.reason}`);
+        const haltId = this.resolveMarketId(directive.marketId);
+        console.log(`[chief] Halt market: ${haltId.slice(0, 8)} — ${directive.reason}`);
+        this.state.haltMarket(haltId, directive.reason);
+        await this.sendChat(`Market halted: ${haltId.slice(0, 8)} — ${directive.reason}`);
         break;
       }
 
       case "close_market": {
-        console.log(`[chief] Close market: ${directive.marketId} → ${directive.direction} (conf: ${(directive.confidence * 100).toFixed(0)}%)`);
-        this.state.setMarketStatus(directive.marketId, "closing");
+        const closeId = this.resolveMarketId(directive.marketId);
+        console.log(`[chief] Close market: ${closeId.slice(0, 8)} → ${directive.direction} (conf: ${(directive.confidence * 100).toFixed(0)}%)`);
+        this.state.setMarketStatus(closeId, "closing");
         // Closing logic: take directional position. For now, just update state.
         // Full closing execution would go through RuntimeV2.
         break;
@@ -567,6 +576,19 @@ export class ChiefGateway {
     } else if (warnings.length > 0) {
       console.log(`[invariants] ${warnings.length} warnings`);
     }
+  }
+
+  // ─── ID Resolution ───
+
+  /** Resolve a possibly-truncated market ID to the full ID in state. */
+  private resolveMarketId(id: string): string {
+    // Exact match
+    if (this.state.markets.has(id)) return id;
+    // Prefix match (LLM often truncates hex IDs)
+    for (const key of this.state.markets.keys()) {
+      if (key.startsWith(id)) return key;
+    }
+    return id; // Return as-is if no match (will fail gracefully downstream)
   }
 
   // ─── Chat ───
