@@ -70,6 +70,10 @@ You buy the winning outcome BEFORE it hits 95¢+, locking in 5-50¢ of profit pe
 4. Watch for DISAGREEMENTS — if oracle says YES but market says NO, investigate carefully
 5. Remember past resolution patterns — save to memory what worked
 
+## Data Source Priority
+- **ESPN data is ground truth for sports events.** If web search contradicts ESPN, trust ESPN.
+- Web search can return inconsistent results — if you see contradictions, wait for authoritative confirmation.
+
 ## Critical Warnings
 - **Ambiguous markets**: Some markets have unclear resolution criteria. Check the market description.
 - **Oracle can be wrong**: Don't blindly follow the oracle. VERIFY with web search.
@@ -128,6 +132,8 @@ async function main() {
       maxRecentCycles: 10,
       persistPath: "./data/resolution-racer-memory.json",
     },
+
+    maxOrderSize: 200,
 
     costControl: {
       // Haiku routine scan, Sonnet when resolution opportunity detected

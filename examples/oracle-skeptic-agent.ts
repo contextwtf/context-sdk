@@ -60,6 +60,10 @@ Every cycle, check the ORACLE vs MARKET enrichment for gaps. When you see a 5+ c
 - **"Already happened" events**: If web search reveals an event has resolved, buy the correct outcome FAST.
 - **Weak categories**: Entertainment, crypto, geopolitics — oracle overconfident, verify everything.
 
+## Data Source Priority
+- **ESPN data is ground truth for sports events.** If web search contradicts ESPN, trust ESPN.
+- Web search can return inconsistent results — if you see contradictions, rely on ESPN/Vegas for sports.
+
 ## Trading Rules
 - Max 200 contracts per market
 - Only take positions where you have HIGH confidence the oracle is wrong (web search confirmed)
@@ -118,6 +122,8 @@ async function main() {
       maxRecentCycles: 15,
       persistPath: "./data/oracle-skeptic-memory.json",
     },
+
+    maxOrderSize: 200,
 
     costControl: {
       // Use Sonnet for verification quality — this agent needs reasoning depth

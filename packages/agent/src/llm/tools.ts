@@ -37,6 +37,91 @@ export interface LlmTool {
   execute(params: Record<string, unknown>, context: ToolContext): Promise<string>;
 }
 
+// ─── Search Cache (prevents flip-flopping from inconsistent results) ───
+
+interface CachedSearch {
+  result: string;
+  summary: string;
+  timestamp: number;
+}
+
+/** TTL for cached search results in ms (2 minutes). */
+const SEARCH_CACHE_TTL = 2 * 60 * 1000;
+
+/**
+ * Tracks recent search results to:
+ * 1. Return cached results for identical queries within TTL (prevents flip-flopping)
+ * 2. Detect contradictions when similar queries return conflicting answers
+ */
+const searchCache = new Map<string, CachedSearch>();
+
+/** Normalize a query for cache key matching. */
+function normalizeQuery(query: string): string {
+  return query.toLowerCase().replace(/[^a-z0-9 ]/g, "").replace(/\s+/g, " ").trim();
+}
+
+/** Find a cached result for an exact or very similar query. */
+function findCachedResult(query: string): CachedSearch | null {
+  const now = Date.now();
+  const normalized = normalizeQuery(query);
+
+  // Exact match first
+  const exact = searchCache.get(normalized);
+  if (exact && now - exact.timestamp < SEARCH_CACHE_TTL) {
+    return exact;
+  }
+
+  // Fuzzy match — if 80%+ of words overlap
+  const queryWords = new Set(normalized.split(" "));
+  for (const [key, cached] of searchCache) {
+    if (now - cached.timestamp >= SEARCH_CACHE_TTL) continue;
+    const keyWords = new Set(key.split(" "));
+    const overlap = [...queryWords].filter((w) => keyWords.has(w)).length;
+    const similarity = overlap / Math.max(queryWords.size, keyWords.size);
+    if (similarity >= 0.8) return cached;
+  }
+
+  return null;
+}
+
+/** Check for contradictions between a new summary and recent cached results. */
+function findContradictions(query: string, newSummary: string): string | null {
+  const now = Date.now();
+  const queryWords = new Set(normalizeQuery(query).split(" "));
+  const contradictions: string[] = [];
+
+  for (const [key, cached] of searchCache) {
+    if (now - cached.timestamp >= SEARCH_CACHE_TTL * 3) continue; // Check wider window for contradictions
+    const keyWords = new Set(key.split(" "));
+    const overlap = [...queryWords].filter((w) => keyWords.has(w)).length;
+    const similarity = overlap / Math.max(queryWords.size, keyWords.size);
+    if (similarity < 0.5) continue; // Not related
+
+    // Simple contradiction detection: "not yet" vs definitive claims, different numbers
+    const oldLower = cached.summary.toLowerCase();
+    const newLower = newSummary.toLowerCase();
+    const hasNotYet = (s: string) => s.includes("not yet") || s.includes("not available") || s.includes("has not");
+    const hasFinal = (s: string) => s.includes("final score") || s.includes("defeated") || s.includes("won");
+    if ((hasNotYet(oldLower) && hasFinal(newLower)) || (hasFinal(oldLower) && hasNotYet(newLower))) {
+      contradictions.push(
+        `Previous search (${Math.round((now - cached.timestamp) / 1000)}s ago) said: "${cached.summary.slice(0, 100)}"`
+      );
+    }
+  }
+
+  if (contradictions.length === 0) return null;
+  return `\n\n⚠️ CONTRADICTION DETECTED — previous searches for similar queries returned conflicting information:\n${contradictions.join("\n")}\nTreat this result with caution. For sports events, prefer ESPN data as ground truth.`;
+}
+
+/** Evict expired entries. */
+function evictExpired(): void {
+  const now = Date.now();
+  const maxAge = SEARCH_CACHE_TTL * 5; // Keep contradiction history longer
+  for (const [key, cached] of searchCache) {
+    if (now - cached.timestamp >= maxAge) searchCache.delete(key);
+  }
+}
+
 // ─── Built-in Tools ───
 
 /** Web search via Tavily API. Requires TAVILY_API_KEY env var. */
@@ -44,7 +129,7 @@ export const webSearchTool: LlmTool = {
   definition: {
     name: "web_search",
     description:
-      "Search the web for current information. Use this to verify your thesis, check recent news, or find facts about events referenced in prediction markets.",
+      "Search the web for current information. Use this to verify your thesis, check recent news, or find facts about events referenced in prediction markets. Note: Results are cached for 2 minutes to ensure consistency. For sports events, ESPN data (get_espn_data) is more authoritative than web search.",
     input_schema: {
       type: "object",
       properties: {
@@ -61,6 +146,15 @@ export const webSearchTool: LlmTool = {
     if (!apiKey) return "Error: TAVILY_API_KEY not set. Web search unavailable.";
 
     const query = params.query as string;
+
+    // Check cache first — prevents flip-flopping from inconsistent Tavily results
+    const cached = findCachedResult(query);
+    if (cached) {
+      return `${cached.result}\n\n(Cached result from ${Math.round((Date.now() - cached.timestamp) / 1000)}s ago)`;
+    }
+
+    evictExpired();
+
     try {
       const response = await fetch("https://api.tavily.com/search", {
         method: "POST",
@@ -79,9 +173,10 @@ export const webSearchTool: LlmTool = {
 
       const data = await response.json();
       const parts: string[] = [];
+      const summary = data.answer ?? "";
 
-      if (data.answer) {
-        parts.push(`Summary: ${data.answer}`);
+      if (summary) {
+        parts.push(`Summary: ${summary}`);
         parts.push("");
       }
 
@@ -92,7 +187,22 @@ export const webSearchTool: LlmTool = {
         parts.push(`  Source: ${result.url}`);
       }
 
-      return parts.join("\n") || "No results found.";
+      let output = parts.join("\n") || "No results found.";
+
+      // Check for contradictions with recent results
+      const contradictionNote = findContradictions(query, summary);
+      if (contradictionNote) {
+        output += contradictionNote;
+      }
+
+      // Cache the result
+      searchCache.set(normalizeQuery(query), {
+        result: output.split("\n\n⚠️")[0], // Cache without contradiction note
+        summary,
+        timestamp: Date.now(),
+      });
+
+      return output;
     } catch (err) {
       return `Search error: ${err instanceof Error ? err.message : String(err)}`;
     }

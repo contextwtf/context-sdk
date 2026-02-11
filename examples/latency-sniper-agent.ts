@@ -55,6 +55,11 @@ Market makers update their quotes on fixed intervals (every 15 seconds) and cach
 4. For news markets: web_search for breaking developments
 5. If you find fresher information than the oracle has, SIZE AGGRESSIVELY — the window closes fast
 
+## Data Source Priority
+- **ESPN data is ground truth for sports events.** If web search contradicts ESPN, trust ESPN. Web search may return cached/speculative/hallucinated results.
+- Web search results can be inconsistent across calls — if you see contradictions, STOP and wait for ESPN confirmation.
+- Do NOT oscillate between positions based on conflicting web search results. Pick the most authoritative source and commit.
+
 ## Speed Rules
 - Act FAST — you have seconds before MMs update
 - Don't overthink — if live data contradicts current price by 5+¢, trade immediately
@@ -108,6 +113,8 @@ async function main() {
       maxRecentCycles: 10,
       persistPath: "./data/latency-sniper-memory.json",
     },
+
+    maxOrderSize: 200,
 
     costControl: {
       // Haiku for speed — this agent needs to be FAST, not deep

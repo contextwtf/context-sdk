@@ -428,7 +428,14 @@ export class AgentRuntime {
         percentFilled: o.percentFilled ?? 0,
       }));
 
-    return { portfolio: normalizedPortfolio, openOrders, balance };
+    // Normalize balance — API may return usdc as string, bigint, or undefined
+    const rawBal = balance as any;
+    const normalizedBalance = {
+      address: rawBal.address ?? (this.trader?.address || ""),
+      usdc: Number(rawBal.usdc) || 0,
+    };
+
+    return { portfolio: normalizedPortfolio, openOrders, balance: normalizedBalance };
   }
 
   /**

@@ -124,6 +124,8 @@ async function main() {
       persistPath: "./data/microstructure-reader-memory.json",
     },
 
+    maxOrderSize: 150,
+
     costControl: {
       // Haiku for fast pattern matching, Sonnet when attack opportunity detected
       routineModel: "claude-haiku-4-5-20251001",

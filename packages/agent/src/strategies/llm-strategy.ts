@@ -72,6 +72,9 @@ export interface LlmStrategyOptions {
   /** Cost control configuration. */
   costControl?: CostControlOptions;
 
+  /** Max contracts per individual order. Orders larger than this are auto-split. */
+  maxOrderSize?: number;
+
   /** Print the LLM's reasoning to console as a running commentary. Default: false. */
   verbose?: boolean;
 }
@@ -90,6 +93,7 @@ export class LlmStrategy implements Strategy {
   private readonly memory: AgentMemory;
   private readonly costController: CostController;
   private readonly verbose: boolean;
+  private readonly maxOrderSize: number | undefined;
 
   private cycleNumber = 0;
   private enrichmentHistory: EnrichmentInput[] = [];
@@ -124,6 +128,7 @@ export class LlmStrategy implements Strategy {
 
     this.memory = new AgentMemory(options.memory);
     this.costController = new CostController(options.costControl);
+    this.maxOrderSize = options.maxOrderSize;
     this.verbose = options.verbose ?? false;
   }
 
@@ -327,8 +332,10 @@ export class LlmStrategy implements Strategy {
         );
       }
 
-      // 10. Cache for skip cycles
-      this.cachedActions = actions;
+      // 10. Cache for skip cycles — only keep cancels and no_action.
+      //     place_order actions are already on the book; replaying them
+      //     creates duplicates.
+      this.cachedActions = actions.filter((a) => a.type !== "place_order");
 
       const actionCount = actions.filter((a) => a.type !== "no_action").length;
       console.log(
@@ -451,6 +458,13 @@ export class LlmStrategy implements Strategy {
       parts.push(memoryStr);
     }
 
+    // Risk constraints — so the LLM knows its limits
+    if (this.maxOrderSize) {
+      parts.push("RISK LIMITS:");
+      parts.push(`  Max order size: ${this.maxOrderSize} contracts (larger orders will be auto-split)`);
+      parts.push("");
+    }
+
     parts.push("What would you like to do? Use tools for research if needed, then output your decisions as a JSON block.");
 
     return parts.join("\n");
@@ -517,8 +531,20 @@ export class LlmStrategy implements Strategy {
 
       const actions: Action[] = [];
       for (const raw of rawActions) {
-        const action = this.resolveAction(raw, markets);
-        if (action) actions.push(action);
+        const resolved = this.resolveAction(raw, markets);
+        if (!resolved) continue;
+
+        // Auto-split oversized orders into chunks
+        if (resolved.type === "place_order" && this.maxOrderSize && resolved.size > this.maxOrderSize) {
+          let remaining = resolved.size;
+          while (remaining > 0) {
+            const chunk = Math.min(remaining, this.maxOrderSize);
+            actions.push({ ...resolved, size: chunk });
+            remaining -= chunk;
+          }
+        } else {
+          actions.push(resolved);
+        }
       }
 
       return actions.length > 0 ? actions : [{ type: "no_action", reason: "No valid actions parsed" }];
