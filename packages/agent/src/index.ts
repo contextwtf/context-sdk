@@ -106,6 +106,8 @@ export {
   type MemoryOptions,
   CostController,
   type CostControlOptions,
+  OpenAICompatibleLlmClient,
+  type OpenAICompatibleOptions,
   createLlmClient,
 } from "./llm/index.js";
 
@@ -113,3 +115,31 @@ export {
 export * as espn from "./signals/espn.js";
 export * as vegas from "./signals/vegas.js";
 export { extractLeagueFromQuestion } from "./signals/espn.js";
+
+// Team coordination (re-export for convenience)
+export {
+  TeamBoard,
+  TeamRuntime,
+  BaseTeamAgent,
+  ConsoleChatBridge,
+  createTeamIntelligence,
+  createPortfolioRisk,
+} from "./team/index.js";
+export type {
+  TeamBoardState,
+  AgentRole,
+  Signal,
+  SignalPriority,
+  SignalType,
+  HaltState,
+  RiskMetrics,
+  FairValueRecord,
+  AgentStatus,
+  TeamRuntimeOptions,
+  TeamAgent,
+  TeamAgentContext,
+  TeamAgentResult,
+  WalletAccess,
+  BaseTeamAgentOptions,
+  ChatBridge,
+} from "./team/index.js";

@@ -9,6 +9,8 @@ export {
   type ContentBlock,
   AnthropicLlmClient,
   GeminiLlmClient,
+  OpenAICompatibleLlmClient,
+  type OpenAICompatibleOptions,
   createLlmClient,
 } from "./client.js";
 

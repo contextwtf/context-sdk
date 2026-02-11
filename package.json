@@ -11,5 +11,8 @@
   },
   "engines": {
     "node": ">=18"
+  },
+  "optionalDependencies": {
+    "grammy": "^1.40.0"
   }
 }
