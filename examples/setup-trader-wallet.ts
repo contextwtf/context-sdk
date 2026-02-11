@@ -1,127 +1,57 @@
 /**
- * Set up the random trader wallet: approve contracts + deposit USDC.
- * Assumes ETH + USDC already transferred from MM wallet.
+ * Set up a trader wallet: check status + auto-approve contracts.
+ *
+ * Requires:
+ *   CONTEXT_API_KEY=ctx_pk_...
+ *   CONTEXT_PRIVATE_KEY=0x...
+ *
+ * Usage:
+ *   npx tsx examples/setup-trader-wallet.ts
  */
-import {
-  createPublicClient,
-  createWalletClient,
-  http,
-  parseUnits,
-  maxUint256,
-  type Hex,
-} from "viem";
-import { privateKeyToAccount } from "viem/accounts";
-import { baseSepolia } from "viem/chains";
-import { ContextTrader } from "@context-markets/sdk";
-
-const MM_KEY = process.env.CONTEXT_PRIVATE_KEY as Hex;
-const TRADER_KEY = "0xb7907be8d52862c9eff217c22b0f1c383a224f3c8c3b88f14c48bfdeddd1488c" as Hex;
-
-const USDC_ADDRESS = "0xBbee2756d3169CF7065e5E9C4A5EA9b1D1Fd415e" as Hex;
-const HOLDINGS_ADDRESS = "0x2C65541078F04B56975F31153D8465edD40eC4cF" as Hex;
-const SETTLEMENT_ADDRESS = "0x67b8f94DcaF32800Fa0cD476FBD8c1D1EB2d5209" as Hex;
-
-const erc20Abi = [
-  {
-    name: "approve",
-    type: "function",
-    stateMutability: "nonpayable",
-    inputs: [
-      { name: "spender", type: "address" },
-      { name: "amount", type: "uint256" },
-    ],
-    outputs: [{ name: "", type: "bool" }],
-  },
-  {
-    name: "transfer",
-    type: "function",
-    stateMutability: "nonpayable",
-    inputs: [
-      { name: "to", type: "address" },
-      { name: "amount", type: "uint256" },
-    ],
-    outputs: [{ name: "", type: "bool" }],
-  },
-] as const;
-
-const holdingsAbi = [
-  {
-    name: "deposit",
-    type: "function",
-    stateMutability: "nonpayable",
-    inputs: [
-      { name: "token", type: "address" },
-      { name: "amount", type: "uint256" },
-    ],
-    outputs: [],
-  },
-  {
-    name: "setOperator",
-    type: "function",
-    stateMutability: "nonpayable",
-    inputs: [
-      { name: "operator", type: "address" },
-      { name: "approved", type: "bool" },
-    ],
-    outputs: [],
-  },
-] as const;
+import { ContextClient } from "@context-markets/sdk";
+import type { Hex } from "viem";
 
 async function main() {
-  const publicClient = createPublicClient({
-    chain: baseSepolia,
-    transport: http(),
+  const apiKey = process.env.CONTEXT_API_KEY;
+  const privateKey = process.env.CONTEXT_PRIVATE_KEY as Hex | undefined;
+
+  if (!apiKey || !privateKey) {
+    console.error("Set CONTEXT_API_KEY and CONTEXT_PRIVATE_KEY env vars");
+    process.exit(1);
+  }
+
+  const ctx = new ContextClient({
+    apiKey,
+    signer: { privateKey },
   });
 
-  const traderAccount = privateKeyToAccount(TRADER_KEY);
-  const traderWallet = createWalletClient({
-    account: traderAccount,
-    chain: baseSepolia,
-    transport: http(),
-  });
+  console.log(`Wallet: ${ctx.address}`);
 
-  console.log(`Trader wallet: ${traderAccount.address}`);
+  // Check current status
+  console.log("\n--- Checking wallet status ---");
+  const status = await ctx.account.status();
+  console.log(`  ETH balance: ${status.ethBalance}`);
+  console.log(`  USDC allowance: ${status.usdcAllowance}`);
+  console.log(`  Operator approved: ${status.isOperatorApproved}`);
+  console.log(`  Needs approvals: ${status.needsApprovals}`);
 
-  // 1. Approve USDC for Holdings
-  console.log("1. Approving USDC for Holdings...");
-  const approveHash = await traderWallet.writeContract({
-    address: USDC_ADDRESS,
-    abi: erc20Abi,
-    functionName: "approve",
-    args: [HOLDINGS_ADDRESS, maxUint256],
-  });
-  await publicClient.waitForTransactionReceipt({ hash: approveHash });
-  console.log(`   Done: ${approveHash}`);
+  if (status.needsApprovals) {
+    console.log("\n--- Running setup ---");
+    const result = await ctx.account.setup();
+    if (result.usdcApprovalTx) {
+      console.log(`  USDC approval tx: ${result.usdcApprovalTx}`);
+    }
+    if (result.operatorApprovalTx) {
+      console.log(`  Operator approval tx: ${result.operatorApprovalTx}`);
+    }
+    console.log("  Setup complete!");
+  } else {
+    console.log("\nWallet already set up.");
+  }
 
-  // 2. Authorize Settlement as operator
-  console.log("2. Setting Settlement as operator...");
-  const operatorHash = await traderWallet.writeContract({
-    address: HOLDINGS_ADDRESS,
-    abi: holdingsAbi,
-    functionName: "setOperator",
-    args: [SETTLEMENT_ADDRESS, true],
-  });
-  await publicClient.waitForTransactionReceipt({ hash: operatorHash });
-  console.log(`   Done: ${operatorHash}`);
-
-  // 3. Deposit USDC into Holdings
-  console.log("3. Depositing 500 USDC into Holdings...");
-  const depositHash = await traderWallet.writeContract({
-    address: HOLDINGS_ADDRESS,
-    abi: holdingsAbi,
-    functionName: "deposit",
-    args: [USDC_ADDRESS, parseUnits("500", 6)],
-  });
-  await publicClient.waitForTransactionReceipt({ hash: depositHash });
-  console.log(`   Done: ${depositHash}`);
-
-  // 4. Verify via API
-  const trader = new ContextTrader({
-    apiKey: process.env.CONTEXT_API_KEY!,
-    signer: { privateKey: TRADER_KEY },
-  });
-  const balance = await trader.getMyBalance();
-  console.log(`\nTrader ready! Settlement balance: ${balance.usdc.settlementBalance}`);
+  // Check balance
+  const balance = await ctx.portfolio.balance();
+  console.log(`\nSettlement balance: ${balance.usdc}`);
 }
 
 main().catch(console.error);
