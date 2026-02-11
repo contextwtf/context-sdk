@@ -58,6 +58,7 @@ const AGENT_CYCLE_MS: Record<AgentRole, number> = {
 export class RiskSentinelAgent extends BaseTeamAgent {
   private readonly breakers: CircuitBreakerConfig;
   private startingBalance: number | null = null;
+  private lastAlertedBreakers = new Set<string>(); // deduplicate alerts
 
   constructor(breakers?: Partial<CircuitBreakerConfig>) {
     super({
@@ -84,11 +85,15 @@ export class RiskSentinelAgent extends BaseTeamAgent {
     let positions: any[] = [];
     let openOrders: any[] = [];
 
+    // Helper: race a promise against a timeout (getAllMyOrders hangs sometimes)
+    const withTimeout = <T>(p: Promise<T>, ms: number, fallback: T): Promise<T> =>
+      Promise.race([p, new Promise<T>((r) => setTimeout(() => r(fallback), ms))]);
+
     if (context.trader) {
       const [rawBalance, rawPortfolio, rawOrders] = await Promise.all([
         context.trader.getMyBalance().catch(() => ({ usdc: 0 })),
         context.trader.getMyPortfolio().catch(() => ({ positions: [] })),
-        context.trader.getAllMyOrders().catch(() => []),
+        withTimeout(context.trader.getAllMyOrders().catch(() => []), 5000, []),
       ]);
 
       // Parse balance
@@ -175,19 +180,23 @@ export class RiskSentinelAgent extends BaseTeamAgent {
         if (!board.isHalted()) {
           board.setHalt(true, `Session drawdown ${Math.round(drawdown * 100)}% exceeds ${Math.round(this.breakers.maxDrawdownPct * 100)}% limit`, "risk");
           chatMessages.push({
-            content: `🚨 GLOBAL HALT — Drawdown ${Math.round(drawdown * 100)}% exceeds limit. Starting: $${this.startingBalance.toFixed(2)}, Current: $${balance.toFixed(2)}`,
+            content: `🚨 Everybody stop. Drawdown hit ${Math.round(drawdown * 100)}% — that's past our ${Math.round(this.breakers.maxDrawdownPct * 100)}% limit. Started at <code>$${this.startingBalance.toFixed(2)}</code>, now at <code>$${balance.toFixed(2)}</code>. <b>Pricer</b>, pull everything. <b>Closer</b>, no new positions.`,
             priority: "halt",
           });
         }
       }
     }
 
+    // Helper: check if a breaker is suppressed via /ignore
+    const isSuppressed = (key: string) => board.state.suppressedBreakers.has(key);
+
     // 2. Exposure limit
     if (balance > 0 && totalExposure / balance > this.breakers.maxExposurePct) {
+      const key = "exposure";
       activeBreakers.push(`exposure_${Math.round(totalExposure / balance * 100)}pct`);
-      if (!board.isHalted()) {
+      if (!board.isHalted() && !this.lastAlertedBreakers.has(key) && !isSuppressed(key)) {
         chatMessages.push({
-          content: `⚠️ Exposure ${Math.round(totalExposure / balance * 100)}% exceeds ${Math.round(this.breakers.maxExposurePct * 100)}% limit — restricting new positions`,
+          content: `Running hot — exposure at ${Math.round(totalExposure / balance * 100)}%, limit is ${Math.round(this.breakers.maxExposurePct * 100)}%. <b>Pricer</b>, trim your weakest conviction first.`,
           priority: "alert",
         });
       }
@@ -195,11 +204,14 @@ export class RiskSentinelAgent extends BaseTeamAgent {
 
     // 3. Capital utilization
     if (capitalUtilization > this.breakers.maxCapitalUtilization) {
+      const key = "capital_util";
       activeBreakers.push(`capital_util_${Math.round(capitalUtilization * 100)}pct`);
-      chatMessages.push({
-        content: `⚠️ Capital utilization ${Math.round(capitalUtilization * 100)}% — restricting new buy orders`,
-        priority: "alert",
-      });
+      if (!this.lastAlertedBreakers.has(key) && !isSuppressed(key)) {
+        chatMessages.push({
+          content: `Capital's getting tight — ${Math.round(capitalUtilization * 100)}% locked up. <b>Pricer</b>, sell-side only until something frees up.`,
+          priority: "alert",
+        });
+      }
     }
 
     // 4. Per-market loss check
@@ -219,15 +231,17 @@ export class RiskSentinelAgent extends BaseTeamAgent {
         activeBreakers.push(`market_loss_${marketId.slice(0, 8)}`);
         if (!board.isHalted(marketId)) {
           board.haltMarket(marketId, `Market loss $${Math.abs(pnl).toFixed(2)} exceeds $${this.breakers.maxMarketLoss} limit`, "risk");
-          chatMessages.push({
-            content: `🛑 HALT ${marketId.slice(0, 8)} — Loss $${Math.abs(pnl).toFixed(2)} exceeds $${this.breakers.maxMarketLoss} limit`,
-            priority: "override",
-          });
+          if (!isSuppressed("market_loss")) {
+            chatMessages.push({
+              content: `🛑 Pulling the plug on <code>${marketId.slice(0, 8)}</code> — down <code>$${Math.abs(pnl).toFixed(2)}</code>, past our $${this.breakers.maxMarketLoss} limit. <b>Pricer</b>, clear your quotes on this one.`,
+              priority: "override",
+            });
+          }
         }
       }
     }
 
-    // 5. Agent staleness
+    // 5. Agent staleness — log to console, only alert chat if catastrophically late (3x threshold)
     for (const [agent, status] of Object.entries(board.state.agentStatus)) {
       if (agent === "risk") continue;
       if (status.lastCycle === 0) continue;
@@ -236,13 +250,27 @@ export class RiskSentinelAgent extends BaseTeamAgent {
       const threshold = AGENT_CYCLE_MS[agent as AgentRole] * this.breakers.stalenessMultiplier;
 
       if (staleness > threshold && status.status !== "stopped") {
-        activeBreakers.push(`${agent}_stale`);
-        chatMessages.push({
-          content: `⚠️ ${agent} stale for ${Math.round(staleness / 1000)}s (threshold: ${Math.round(threshold / 1000)}s)`,
-          priority: "alert",
-        });
+        const key = `${agent}_stale`;
+        activeBreakers.push(key);
+        // Console-only for normal staleness (LLM calls are slow, this is usually fine)
+        console.log(`[risk] ${agent} stale for ${Math.round(staleness / 1000)}s (threshold: ${Math.round(threshold / 1000)}s)`);
+        // Only alert chat if catastrophically late (3x beyond threshold)
+        if (staleness > threshold * 3 && !this.lastAlertedBreakers.has(key)) {
+          chatMessages.push({
+            content: `🚨 <b>${agent}</b> hasn't responded in ${Math.round(staleness / 1000)}s — way past the ${Math.round(threshold / 1000)}s threshold. <b>Chief</b>, might need a restart.`,
+            priority: "alert",
+          });
+        }
       }
     }
+
+    // Update deduplication set: remember what we alerted, clear resolved ones
+    this.lastAlertedBreakers = new Set(activeBreakers.map((b) => {
+      // Normalize to base key (strip numeric suffix)
+      if (b.startsWith("exposure")) return "exposure";
+      if (b.startsWith("capital_util")) return "capital_util";
+      return b;
+    }));
 
     // ─── Update Board ───
 
@@ -254,13 +282,27 @@ export class RiskSentinelAgent extends BaseTeamAgent {
       activeCircuitBreakers: activeBreakers,
     };
 
-    // Periodic status report (every 6 cycles = ~60s)
+    // Periodic status report (every 6 cycles = ~60s) + first cycle announcement
     const cycleCount = board.state.agentStatus.risk.cycleCount;
-    if (cycleCount > 0 && cycleCount % 6 === 0) {
-      chatMessages.push({
-        content: `Risk: P&L ${sessionPnL >= 0 ? "+" : ""}$${sessionPnL.toFixed(2)} | Exposure: $${totalExposure.toFixed(2)} (${balance > 0 ? Math.round(totalExposure / balance * 100) : 0}%) | Capital util: ${Math.round(capitalUtilization * 100)}% | Orders: ${openOrders.length} | Positions: ${positions.length}${activeBreakers.length > 0 ? ` | ⚠️ ${activeBreakers.join(", ")}` : ""}`,
-        priority: "info",
-      });
+    const pnlStr = `${sessionPnL >= 0 ? "+" : ""}$${sessionPnL.toFixed(2)}`;
+    const expPct = balance > 0 ? Math.round(totalExposure / balance * 100) : 0;
+
+    if (cycleCount === 0) {
+      const lines = [
+        `On watch. <code>$${balance.toFixed(2)}</code> in the tank.`,
+        `${positions.length} positions, ${openOrders.length} open orders. Let's keep it clean.`,
+      ];
+      chatMessages.push({ content: lines.join("\n"), priority: "info" });
+    } else if (cycleCount % 6 === 0) {
+      const lines = [
+        `P&amp;L: <code>${pnlStr}</code>  |  Exposure: <code>${expPct}%</code>`,
+        `Capital: <code>${Math.round(capitalUtilization * 100)}%</code> utilized`,
+        `Orders: ${openOrders.length}  |  Positions: ${positions.length}`,
+      ];
+      if (activeBreakers.length > 0) {
+        lines.push(`⚠️ <b>${activeBreakers.join(", ")}</b>`);
+      }
+      chatMessages.push({ content: lines.join("\n"), priority: "info" });
     }
 
     return { chatMessages };

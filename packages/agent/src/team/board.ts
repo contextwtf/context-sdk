@@ -84,12 +84,20 @@ export interface TeamBoardState {
 
   /** Human messages pending processing */
   humanMessages: Signal[];
+
+  /** Breaker names suppressed via /ignore — still tracked, but no chat alerts */
+  suppressedBreakers: Set<string>;
 }
+
+// ─── Event Listener Types ───
+
+export type SignalListener = (signal: Signal, target?: AgentRole) => void;
 
 // ─── TeamBoard Class ───
 
 export class TeamBoard {
   readonly state: TeamBoardState;
+  private signalListeners: SignalListener[] = [];
 
   constructor() {
     const defaultStatus = (): AgentStatus => ({
@@ -134,7 +142,28 @@ export class TeamBoard {
         closer: [],
       },
       humanMessages: [],
+      suppressedBreakers: new Set(),
     };
+  }
+
+  // ─── Event Listeners ───
+
+  /** Register a callback that fires when signals are posted with urgent/halt priority. */
+  onSignal(listener: SignalListener): () => void {
+    this.signalListeners.push(listener);
+    return () => {
+      this.signalListeners = this.signalListeners.filter((l) => l !== listener);
+    };
+  }
+
+  private emitSignal(signal: Signal, target?: AgentRole): void {
+    for (const listener of this.signalListeners) {
+      try {
+        listener(signal, target);
+      } catch (err) {
+        console.error("[board] Signal listener error:", err);
+      }
+    }
   }
 
   // ─── Signal Management ───
@@ -146,6 +175,12 @@ export class TeamBoard {
       timestamp: Date.now(),
     };
     this.state.signals.push(full);
+
+    // Emit for urgent/halt signals so runtime can wake agents
+    if (full.priority === "urgent" || full.priority === "halt") {
+      this.emitSignal(full);
+    }
+
     return full;
   }
 
@@ -213,6 +248,11 @@ export class TeamBoard {
       timestamp: Date.now(),
     };
     this.state.inboxes[to].push(full);
+
+    // Emit for urgent/halt messages so runtime can wake the target agent
+    if (full.priority === "urgent" || full.priority === "halt") {
+      this.emitSignal(full, to);
+    }
   }
 
   readInbox(agent: AgentRole): Signal[] {
@@ -282,6 +322,7 @@ export class TeamBoard {
       directives: this.state.directives.slice(-10),
       agentStatus: this.state.agentStatus,
       humanMessages: this.state.humanMessages,
+      suppressedBreakers: [...this.state.suppressedBreakers],
     };
   }
 }

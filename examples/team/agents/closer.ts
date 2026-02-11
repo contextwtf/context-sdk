@@ -26,6 +26,9 @@ import { createTeamIntelligence, createPortfolioRisk } from "@context-markets/ag
 
 const SYSTEM_PROMPT = `You are the Closer — the resolution specialist of a prediction market making team.
 
+## Your Personality
+You're patient and deliberate — most of the time you're just watching, waiting for your moment. But when a market is about to resolve, you come alive. You're cool under pressure and decisive. "Been watching this one. Oracle just crossed 95% — I'm on it." When you claim a market from Pricer, be direct: "Taking over from Pricer on this one." Keep it calm and confident, never rushed.
+
 ## Your Role
 You detect when markets are about to resolve and take directional positions for maximum profit.
 This is the highest-value, highest-risk moment in prediction markets.
@@ -132,36 +135,47 @@ export class CloserAgent extends BaseTeamAgent {
 
     // Quick check: any markets with high oracle confidence?
     // This is the "mostly idle" optimization — skip expensive LLM if nothing is close
-    const selector = await strategy.selectMarkets();
     let marketIds: string[];
-    if (selector.type === "ids") {
-      marketIds = selector.ids;
+    let snapshots: any[];
+
+    if (context.dataCache?.hasData) {
+      snapshots = context.dataCache.getAllSnapshots().map((s) => ({
+        ...s,
+        quotes: [],
+      }));
+      marketIds = context.dataCache.getMarketIds();
     } else {
-      const result = await context.client.searchMarkets({
-        query: selector.query,
-        status: selector.status,
-      });
-      marketIds = result.markets.map((m: { id: string }) => m.id);
+      const selector = await strategy.selectMarkets();
+      if (selector.type === "ids") {
+        marketIds = selector.ids;
+      } else {
+        const result = await context.client.searchMarkets({
+          query: selector.query,
+          status: selector.status,
+        });
+        marketIds = result.markets.map((m: { id: string }) => m.id);
+      }
+
+      if (marketIds.length === 0) return null;
+
+      snapshots = await Promise.all(
+        marketIds.map(async (id) => {
+          const [market, orderbook, oracle] = await Promise.all([
+            context.client.getMarket(id),
+            context.client.getOrderbook(id).catch(() => ({ bids: [], asks: [] })),
+            context.client.getOracleSignals(id).catch(() => []),
+          ]);
+          return {
+            market: (market as any).market ?? market,
+            quotes: [],
+            orderbook,
+            oracleSignals: Array.isArray(oracle) ? oracle : [(oracle as any).oracle].filter(Boolean),
+          };
+        }),
+      );
     }
 
     if (marketIds.length === 0) return null;
-
-    // Fetch snapshots
-    const snapshots = await Promise.all(
-      marketIds.map(async (id) => {
-        const [market, orderbook, oracle] = await Promise.all([
-          context.client.getMarket(id),
-          context.client.getOrderbook(id).catch(() => ({ bids: [], asks: [] })),
-          context.client.getOracleSignals(id).catch(() => []),
-        ]);
-        return {
-          market: (market as any).market ?? market,
-          quotes: [],
-          orderbook,
-          oracleSignals: Array.isArray(oracle) ? oracle : [(oracle as any).oracle].filter(Boolean),
-        };
-      }),
-    );
 
     // Quick rule-based check: any oracle confidence > 85%?
     const highConfMarkets = snapshots.filter((s) => {
@@ -172,6 +186,17 @@ export class CloserAgent extends BaseTeamAgent {
     // If nothing is near resolution, skip LLM entirely
     if (highConfMarkets.length === 0) {
       return null;
+    }
+
+    // First cycle: announce even if nothing is near resolution
+    const cycleCount = board.state.agentStatus.closer.cycleCount;
+    if (cycleCount === 0) {
+      return {
+        chatMessages: [{
+          content: `Watching. ${snapshots.length} markets on the board, ${highConfMarkets.length} getting close. I'll step in when the time is right.`,
+          priority: "info",
+        }],
+      };
     }
 
     // Something looks close to resolving — use LLM for deeper analysis
@@ -188,9 +213,20 @@ export class CloserAgent extends BaseTeamAgent {
     const chatMessages: { content: string; priority: string }[] = [];
     const tradeActions = actions.filter((a) => a.type !== "no_action");
 
+    // Escape HTML
+    const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
     if (tradeActions.length > 0) {
+      // Build market names for the message
+      const marketNames = highConfMarkets.map((s) => {
+        const m = s.market as any;
+        return esc((m.question ?? m.title ?? m.id?.slice(0, 8) ?? "?").slice(0, 35));
+      });
+      const conf = Math.round(((highConfMarkets[0].oracleSignals[0] as any)?.confidence ?? 0) * 100);
+      const nameStr = marketNames.slice(0, 2).join(", ");
+
       chatMessages.push({
-        content: `Resolution detected! ${highConfMarkets.length} markets near resolution. Taking ${tradeActions.length} positions.`,
+        content: `This is it. ${nameStr} at ${conf}% — taking over from <b>Pricer</b>. ${tradeActions.length} position${tradeActions.length > 1 ? "s" : ""} going in.`,
         priority: "urgent",
       });
     }

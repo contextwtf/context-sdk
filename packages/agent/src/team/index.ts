@@ -6,6 +6,7 @@ export type {
   Signal,
   SignalPriority,
   SignalType,
+  SignalListener,
   HaltState,
   RiskMetrics,
   FairValueRecord,
@@ -28,3 +29,6 @@ export type { ChatBridge } from "./chat-bridge.js";
 export { ConsoleChatBridge } from "./chat-bridge.js";
 
 export { createTeamIntelligence, createPortfolioRisk } from "./enrichments.js";
+
+export { SharedDataCache } from "./data-cache.js";
+export type { MarketSnapshot as CachedMarketSnapshot, SharedDataCacheOptions } from "./data-cache.js";

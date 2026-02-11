@@ -101,6 +101,20 @@ export class LlmStrategy implements Strategy {
   private cachedActions: Action[] = [];
   private hadFillSinceLastEval = false;
   private initialized = false;
+  private _lastReasoning = "";
+
+  /** The LLM's reasoning text from the most recent evaluate() call. */
+  get lastReasoning(): string {
+    return this._lastReasoning;
+  }
+
+  /** Extra context to inject into the next evaluate() call (cleared after use). */
+  private _injectedContext: string | null = null;
+
+  /** Inject extra context (e.g., human messages) into the next evaluate() call. */
+  injectContext(context: string): void {
+    this._injectedContext = context;
+  }
 
   constructor(options: LlmStrategyOptions) {
     this.name = options.name;
@@ -316,6 +330,7 @@ export class LlmStrategy implements Strategy {
         .filter((a) => a.type !== "no_action")
         .map((a) => this.summarizeAction(a));
       const reasoning = this.extractReasoning(response.text);
+      this._lastReasoning = reasoning;
 
       this.memory.addCycle({
         cycle: this.cycleNumber,
@@ -465,6 +480,14 @@ export class LlmStrategy implements Strategy {
       parts.push("");
     }
 
+    // Injected context (e.g., human messages)
+    if (this._injectedContext) {
+      parts.push("INCOMING MESSAGES:");
+      parts.push(this._injectedContext);
+      parts.push("");
+      this._injectedContext = null; // Clear after use
+    }
+
     parts.push("What would you like to do? Use tools for research if needed, then output your decisions as a JSON block.");
 
     return parts.join("\n");
@@ -518,7 +541,9 @@ export class LlmStrategy implements Strategy {
       if (result) return result;
     }
 
-    console.warn("[llm-strategy] Could not parse actions from LLM response");
+    // Log a snippet of what we couldn't parse for debugging
+    const snippet = text.slice(0, 200).replace(/\n/g, " ");
+    console.warn(`[llm-strategy] Could not parse actions from LLM response: "${snippet}..."`);
     return [{ type: "no_action", reason: "Could not parse actions from response" }];
   }
 
@@ -586,12 +611,15 @@ export class LlmStrategy implements Strategy {
         return null;
       }
 
+      // Clamp price to valid range (1-99). LLMs sometimes output 0 or 100.
+      const clampedPrice = Math.max(1, Math.min(99, Math.round(Number(priceCents))));
+
       return {
         type: "place_order",
         marketId,
         outcome: outcome as "yes" | "no",
         side: side as "buy" | "sell",
-        priceCents: Math.round(Number(priceCents)),
+        priceCents: clampedPrice,
         size: Math.round(Number(size)),
       } as PlaceOrderAction;
     }
@@ -631,16 +659,37 @@ export class LlmStrategy implements Strategy {
   // ─── Helpers ───
 
   private extractReasoning(text: string): string {
-    // Extract reasoning before the JSON block
+    // Priority 1: Extract the "reasoning" field from JSON (most reliable)
+    const reasoningMatch = text.match(/"reasoning"\s*:\s*"((?:[^"\\]|\\.)*)"/);
+    if (reasoningMatch) {
+      return reasoningMatch[1]
+        .replace(/\\n/g, " ")
+        .replace(/\\"/g, '"')
+        .replace(/\\\\/g, "\\")
+        .slice(0, 500);
+    }
+
+    // Priority 2: Extract prose before the JSON block (if there's meaningful text)
     const jsonIdx = text.indexOf("```");
-    if (jsonIdx > 0) {
+    if (jsonIdx > 30) {
       return text.slice(0, jsonIdx).trim().slice(0, 500);
     }
-    // Or before any JSON-looking block
     const braceIdx = text.indexOf('{"');
-    if (braceIdx > 0) {
+    if (braceIdx > 30) {
       return text.slice(0, braceIdx).trim().slice(0, 500);
     }
+
+    // Priority 3: Strip any markdown code fences and JSON artifacts from the text
+    let cleaned = text
+      .replace(/```json\s*[\s\S]*?```/g, "")  // Remove fenced JSON blocks
+      .replace(/```[\s\S]*?```/g, "")           // Remove any fenced blocks
+      .replace(/\{[\s\S]*?"(?:actions|signals|directives)"[\s\S]*\}/g, "") // Remove JSON objects
+      .trim();
+
+    if (cleaned.length > 10) {
+      return cleaned.slice(0, 500);
+    }
+
     return text.slice(0, 500);
   }
 

@@ -25,6 +25,11 @@ import { createTeamIntelligence } from "@context-markets/agent/team";
 
 const SYSTEM_PROMPT = `You are the Scanner — the intelligence arm of a prediction market making team.
 
+Today is ${new Date().toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}.
+
+## Your Personality
+You're the team's eyes and ears — alert, sharp, and a little eager when you find something big. You love catching mispricings before anyone else. When you find a divergence, you flag it with energy but stick to facts. You address teammates directly: "Pricer, heads up —" or "Closer, keep an eye on this one." Keep it concise and conversational, like a newsroom tip-off.
+
 ## Your Role
 You gather, verify, and distribute actionable intelligence to the team. You do NOT trade.
 Every 30 seconds, you scan for:
@@ -39,6 +44,12 @@ For each change you detect, output a signal:
 - Which market(s) are affected
 - How urgent it is (halt/urgent/alert/info)
 - What the Pricer should do about it
+
+## Search Best Practices
+- ALWAYS include the year (2026) in web search queries about recent events
+- Use specific dates: "January 2026 nonfarm payrolls" not "January nonfarm payrolls"
+- If a data release hasn't happened yet, say so — don't report projected numbers as actual results
+- Compare findings against the market's resolution criteria before reporting
 
 ## Data Priority
 1. ESPN scores = ground truth for sports
@@ -126,37 +137,48 @@ export class ScannerAgent extends BaseTeamAgent {
     // Use LlmStrategy for intelligence gathering
     const strategy = this.getOrCreateStrategy(board);
 
-    // Fetch markets
-    const selector = await strategy.selectMarkets();
+    // Prefer shared data cache over direct API calls
     let marketIds: string[];
-    if (selector.type === "ids") {
-      marketIds = selector.ids;
+    let snapshots: any[];
+
+    if (context.dataCache?.hasData) {
+      // Use cached data — no API calls needed
+      snapshots = context.dataCache.getAllSnapshots().map((s) => ({
+        ...s,
+        quotes: [],
+      }));
+      marketIds = context.dataCache.getMarketIds();
     } else {
-      const result = await context.client.searchMarkets({
-        query: selector.query,
-        status: selector.status,
-      });
-      marketIds = result.markets.map((m: { id: string }) => m.id);
+      // Fallback: fetch directly (cache not ready or disabled)
+      const selector = await strategy.selectMarkets();
+      if (selector.type === "ids") {
+        marketIds = selector.ids;
+      } else {
+        const result = await context.client.searchMarkets({
+          query: selector.query,
+          status: selector.status,
+        });
+        marketIds = result.markets.map((m: { id: string }) => m.id);
+      }
+
+      if (marketIds.length === 0) return null;
+
+      snapshots = await Promise.all(
+        marketIds.map(async (id) => {
+          const [market, orderbook, oracle] = await Promise.all([
+            context.client.getMarket(id),
+            context.client.getOrderbook(id).catch(() => ({ bids: [], asks: [] })),
+            context.client.getOracleSignals(id).catch(() => []),
+          ]);
+          return {
+            market: (market as any).market ?? market,
+            quotes: [],
+            orderbook,
+            oracleSignals: Array.isArray(oracle) ? oracle : [(oracle as any).oracle].filter(Boolean),
+          };
+        }),
+      );
     }
-
-    if (marketIds.length === 0) return null;
-
-    // Fetch snapshots
-    const snapshots = await Promise.all(
-      marketIds.map(async (id) => {
-        const [market, orderbook, oracle] = await Promise.all([
-          context.client.getMarket(id),
-          context.client.getOrderbook(id).catch(() => ({ bids: [], asks: [] })),
-          context.client.getOracleSignals(id).catch(() => []),
-        ]);
-        return {
-          market: (market as any).market ?? market,
-          quotes: [],
-          orderbook,
-          oracleSignals: Array.isArray(oracle) ? oracle : [(oracle as any).oracle].filter(Boolean),
-        };
-      }),
-    );
 
     // Build minimal agent state (Scanner doesn't trade, so no portfolio needed)
     const state = {
@@ -172,15 +194,77 @@ export class ScannerAgent extends BaseTeamAgent {
     const chatMessages: { content: string; priority: string }[] = [];
     const signals: Omit<Signal, "id" | "timestamp">[] = [];
 
-    // Parse any signals from the LLM response (they come as no_action with reasons)
-    // The real signals come from the strategy's reasoning — we'd need to parse them
-    // For now, log what the scanner found
-    const hasAction = actions.some((a) => a.type !== "no_action");
-    if (hasAction) {
-      chatMessages.push({
-        content: `Scanned ${snapshots.length} markets. Found actionable intelligence.`,
-        priority: "info",
-      });
+    // Escape HTML
+    const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+    // Report scan results
+    const cycleCount = board.state.agentStatus.scanner.cycleCount;
+
+    // First cycle: announce with market list
+    if (cycleCount === 0) {
+      const lines = [`Eyes on <b>${snapshots.length}</b> active markets tonight`];
+      for (const snap of snapshots.slice(0, 6)) {
+        const m = snap.market as any;
+        const name = esc((m.question ?? m.title ?? "?").slice(0, 40));
+        const oConf = (snap.oracleSignals[0] as any)?.confidence;
+        const confStr = oConf ? ` (${Math.round(oConf * 100)}%)` : "";
+        lines.push(`  ${name}${confStr}`);
+      }
+      if (snapshots.length > 6) lines.push(`  <i>+${snapshots.length - 6} more</i>`);
+      chatMessages.push({ content: lines.join("\n"), priority: "info" });
+    } else {
+      // Post the LLM's intelligence findings when it has something to say
+      const reasoning = strategy.lastReasoning;
+      if (reasoning && reasoning.length > 20) {
+        // Cap base reasoning to ~300 chars for Telegram readability
+        let text = esc(reasoning);
+        if (text.length > 300) {
+          const cutoff = text.lastIndexOf(".", 300);
+          text = text.slice(0, cutoff > 100 ? cutoff + 1 : 300) + "...";
+        }
+
+        chatMessages.push({ content: text, priority: "info" });
+
+        // Send inter-agent references as SEPARATE messages for readability
+        // Check for high-confidence oracle signals that Closer should know about
+        const highConfSnapshots = snapshots.filter((s) => {
+          const conf = (s.oracleSignals[0] as any)?.confidence ?? 0;
+          return conf > 0.85;
+        });
+        if (highConfSnapshots.length > 0) {
+          const mName = esc(((highConfSnapshots[0].market as any).question ?? (highConfSnapshots[0].market as any).title ?? "?").slice(0, 35));
+          const conf = Math.round(((highConfSnapshots[0].oracleSignals[0] as any)?.confidence ?? 0) * 100);
+          chatMessages.push({
+            content: `<b>Closer</b>, heads up — ${mName} oracle at ${conf}%. This one might be wrapping up.`,
+            priority: "alert",
+          });
+        }
+
+        // Check for price divergence that Pricer should act on
+        for (const snap of snapshots) {
+          const oConf = (snap.oracleSignals[0] as any)?.confidence;
+          if (!oConf) continue;
+          const obBid = (snap.orderbook as any).bids?.[0]?.price ?? 0;
+          const obAsk = (snap.orderbook as any).asks?.[0]?.price ?? 100;
+          const mid = obBid > 0 ? Math.round((obBid + obAsk) / 2) : null;
+          if (mid !== null && Math.abs(mid - Math.round(oConf * 100)) > 10) {
+            const mName = esc(((snap.market as any).question ?? (snap.market as any).title ?? "?").slice(0, 35));
+            chatMessages.push({
+              content: `<b>Pricer</b> — ${mName} is off. Mid ${mid}¢ but oracle says ${Math.round(oConf * 100)}¢. Worth a look.`,
+              priority: "alert",
+            });
+            break; // Only one Pricer callout per cycle
+          }
+        }
+      }
+
+      // Periodic heartbeat when LLM was skipped (cost controller)
+      if (chatMessages.length === 0 && cycleCount % 10 === 0) {
+        chatMessages.push({
+          content: `All quiet. Still watching ${snapshots.length} markets.`,
+          priority: "info",
+        });
+      }
     }
 
     return { signals, chatMessages };

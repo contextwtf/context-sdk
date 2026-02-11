@@ -129,7 +129,7 @@ export const webSearchTool: LlmTool = {
   definition: {
     name: "web_search",
     description:
-      "Search the web for current information. Use this to verify your thesis, check recent news, or find facts about events referenced in prediction markets. Note: Results are cached for 2 minutes to ensure consistency. For sports events, ESPN data (get_espn_data) is more authoritative than web search.",
+      "Search the web for current information. Use this to verify your thesis, check recent news, or find facts about events referenced in prediction markets. IMPORTANT: Always include the year (2026) in queries about recent events — e.g., 'January 2026 nonfarm payrolls' not 'January nonfarm payrolls'. Results are cached for 2 minutes to ensure consistency. For sports events, ESPN data (get_espn_data) is more authoritative than web search.",
     input_schema: {
       type: "object",
       properties: {

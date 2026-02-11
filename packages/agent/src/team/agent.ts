@@ -9,6 +9,7 @@
 import type { Action } from "../strategy.js";
 import type { TeamBoard, AgentRole, Signal } from "./board.js";
 import type { ContextClient, ContextTrader } from "@context-markets/sdk";
+import type { SharedDataCache } from "./data-cache.js";
 
 // ─── Types ───
 
@@ -16,6 +17,8 @@ export interface TeamAgentContext {
   client: ContextClient;
   trader: ContextTrader | null;
   dryRun: boolean;
+  /** Shared data cache — agents should prefer this over direct API calls. */
+  dataCache?: SharedDataCache | null;
 }
 
 export interface TeamAgentResult {
