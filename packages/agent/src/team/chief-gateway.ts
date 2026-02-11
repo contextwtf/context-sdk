@@ -28,7 +28,7 @@ import type { ChatBridge } from "./chat-bridge.js";
 import { computeQuotes, buildPricerParams } from "./pricer-fn.js";
 import { riskCheckAll } from "./risk-middleware.js";
 import { runInvariants, getViolations, hasCriticalViolation } from "./invariants.js";
-import { dispatchScanner } from "./scanner-worker.js";
+import { dispatchScanner, type MarketContext } from "./scanner-worker.js";
 import { getCoalesceKey, getEventPriority } from "./event-queue.js";
 
 // ─── System Prompt ───
@@ -51,32 +51,32 @@ You'll receive:
 - **Events Since Last Cycle** — what triggered this cycle
 - **Pending Tasks** — scanner tasks still running
 
-## Output Format
-Respond with JSON containing your directives:
-\`\`\`json
-{
-  "reasoning": "Brief assessment of the situation...",
-  "directives": [
-    { "type": "set_fair_value", "marketId": "...", "fairValue": 65, "confidence": 0.8, "reasoning": "..." },
-    { "type": "dispatch_scanner", "markets": ["..."], "focus": "Check latest NFP data", "tools": ["web_search"] },
-    { "type": "respond_human", "message": "Here's what I see..." },
-    { "type": "halt_market", "marketId": "...", "reason": "..." },
-    { "type": "close_market", "marketId": "...", "direction": "yes", "confidence": 0.95 }
-  ]
-}
-\`\`\`
+## Output Format — CRITICAL
+Your ENTIRE response must be a single JSON object. No thinking, no explanation, no markdown — ONLY JSON.
+
+{"reasoning":"Brief assessment...","directives":[...]}
+
+Directive types:
+- {"type":"set_fair_value","marketId":"0x...","fairValue":65,"confidence":0.8,"reasoning":"..."}
+- {"type":"dispatch_scanner","markets":["0x..."],"focus":"Check latest data","tools":["web_search"]}
+- {"type":"respond_human","message":"Here's what I see..."}
+- {"type":"halt_market","marketId":"0x...","reason":"..."}
+- {"type":"close_market","marketId":"0x...","direction":"yes","confidence":0.95}
 
 ## Decision Guidelines
+- **New markets** → ALWAYS dispatch_scanner immediately. You cannot set informed fair values without knowing what the market is about.
 - **Provisional markets** need your immediate attention — confirm or correct the FV
-- **Scanner results** give you data to set confident fair values
+- **Scanner results** → set_fair_value for EACH market that has a suggestedFairValue. This is your primary job: translate research into fair values.
 - **Fills** mean someone traded with us — consider if the market moved
 - **Human messages** always get a response — be warm, brief, helpful
 - When uncertain, dispatch a scanner rather than guessing
 - Always explain your reasoning for FV changes
+- NEVER return an empty directives array unless you truly have nothing to do (e.g., a tick with no pending work and no scanner results to act on)
 
 ## Fair Value Setting
 - Use ALL available signals: orderbook midpoint, oracle confidence, scanner findings
-- Confidence: 0.0 (total guess) to 1.0 (verified fact)
+- When scanner findings include suggestedFairValue, USE IT to set_fair_value with appropriate confidence
+- Confidence: 0.0 (total guess) to 1.0 (verified fact). Scanner confidence maps roughly to your FV confidence.
 - Higher confidence = tighter spreads, larger sizes (the pricer math handles this)
 - If oracle says 90%+ confidence, market is likely resolving — consider close_market
 
@@ -111,9 +111,6 @@ export class ChiefGateway {
   private cycleCount = 0;
   private scannerTaskCounter = 0;
 
-  // Track which events we've already handled (prevent re-processing)
-  private handledEventTimestamps = new Set<number>();
-
   constructor(
     state: OrderBookState,
     queue: EventQueue,
@@ -143,28 +140,14 @@ export class ChiefGateway {
         // Check if stopped while waiting
         if (!this.running) break;
 
-        // Filter already-handled events
-        const newEvents = events.filter((e) => {
-          if (this.handledEventTimestamps.has(e.arrivedAt)) return false;
-          this.handledEventTimestamps.add(e.arrivedAt);
-          return true;
-        });
-
-        // Clean up old timestamps (keep last 1000)
-        if (this.handledEventTimestamps.size > 1000) {
-          const arr = Array.from(this.handledEventTimestamps).sort();
-          const toRemove = arr.slice(0, arr.length - 500);
-          for (const t of toRemove) this.handledEventTimestamps.delete(t);
-        }
-
-        if (newEvents.length === 0) {
+        if (events.length === 0) {
           // Heartbeat — run invariants even when idle
           this.runInvariantCheck();
           continue;
         }
 
-        // Process event batch
-        await this.processBatch(newEvents);
+        // Process event batch (queue.next() already drains + coalesces — no dedup needed)
+        await this.processBatch(events);
         this.cycleCount++;
       } catch (err) {
         console.error("[chief] Event loop error:", err instanceof Error ? err.message : err);
@@ -312,11 +295,19 @@ export class ChiefGateway {
   // ─── Directive Parsing ───
 
   private parseDirectives(text: string): ChiefDirective[] {
-    const jsonMatch = text.match(/```json\s*([\s\S]*?)```/) ?? text.match(/\{[\s\S]*"directives"[\s\S]*\}/);
-    if (!jsonMatch) return [];
+    const jsonStr = extractDirectivesJson(text);
+    if (!jsonStr) {
+      if (text.length > 0) {
+        console.log(`[chief] No JSON directives found in response (${text.length} chars). First 200: ${text.slice(0, 200)}`);
+        console.log(`[chief] Last 300: ${text.slice(-300)}`);
+      }
+      return [];
+    }
 
     try {
-      const parsed = JSON.parse(jsonMatch[1] ?? jsonMatch[0]);
+      const parsed = JSON.parse(jsonStr);
+
+      const rawDirs = parsed.directives ?? [];
 
       // Send reasoning to chat if present
       if (parsed.reasoning && this.chatBridge) {
@@ -346,6 +337,10 @@ export class ChiefGateway {
           case "dispatch_scanner":
             if (d.markets && d.focus) {
               const taskId = `scan-${++this.scannerTaskCounter}`;
+              // Scale timeout and tool calls by number of markets
+              const marketCount = d.markets.length;
+              const maxToolCalls = Math.max(this.config.llm.maxToolCallsPerCycle, marketCount * 2);
+              const timeout = Math.max(60_000, marketCount * 10_000);
               directives.push({
                 type: "dispatch_scanner",
                 dispatch: {
@@ -353,8 +348,8 @@ export class ChiefGateway {
                   markets: d.markets,
                   focus: d.focus,
                   tools: d.tools ?? ["web_search"],
-                  maxToolCalls: this.config.llm.maxToolCallsPerCycle,
-                  timeout: 30_000,
+                  maxToolCalls,
+                  timeout,
                 },
               });
             }
@@ -390,7 +385,9 @@ export class ChiefGateway {
       }
 
       return directives;
-    } catch {
+    } catch (err) {
+      console.log(`[chief] JSON parse error: ${err instanceof Error ? err.message : err}`);
+      console.log(`[chief] Attempted to parse: ${jsonStr.slice(0, 300)}`);
       return [];
     }
   }
@@ -467,12 +464,22 @@ export class ChiefGateway {
           markets: dispatch.markets,
         });
 
+        // Build market contexts so scanner knows what to search for
+        const marketContexts = dispatch.markets
+          .map((id) => {
+            const m = this.state.markets.get(id);
+            if (!m) return null;
+            return { id: m.id, name: m.name, resolutionCriteria: m.resolutionCriteria, category: m.category };
+          })
+          .filter((c): c is NonNullable<typeof c> => c !== null);
+
         // Fire and forget — result comes back as scanner_result event
         dispatchScanner(
           dispatch,
           this.routineClient,
           this.config.scannerTools,
           this.config.executeTool,
+          marketContexts,
         ).then((result) => {
           this.state.completePendingTask(dispatch.taskId);
           const event: TeamEvent = {
@@ -584,8 +591,14 @@ function renderEvent(event: TeamEvent): string {
       return `data_refresh: ${event.snapshots.length} market snapshots`;
     case "human_message":
       return `human_message from ${event.from}: "${event.content.slice(0, 80)}"`;
-    case "scanner_result":
-      return `scanner_result (${event.taskId}): ${event.findings.length} findings`;
+    case "scanner_result": {
+      const findingLines = event.findings.map((f) => {
+        const fvStr = f.suggestedFairValue !== undefined ? ` → suggested FV: ${f.suggestedFairValue}¢` : "";
+        const dataStr = Object.keys(f.data).length > 0 ? ` | data: ${JSON.stringify(f.data).slice(0, 200)}` : "";
+        return `  - ${f.marketId}: [${f.type}] confidence=${f.confidence} source="${f.source}"${fvStr}${dataStr}`;
+      });
+      return `scanner_result (${event.taskId}): ${event.findings.length} findings\n${findingLines.join("\n")}`;
+    }
     case "tick":
       return `tick at ${new Date(event.timestamp).toLocaleTimeString()}`;
     case "fill":
@@ -597,10 +610,65 @@ function renderEvent(event: TeamEvent): string {
     case "reprice_needed":
       return `reprice_needed${event.urgent ? " (URGENT)" : ""}: ${event.marketId} — ${event.reason}`;
     case "new_market":
-      return `new_market: ${event.name} (${event.marketId})`;
+      return `new_market: "${event.name}" (${event.marketId})`;
   }
 }
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** Extract JSON containing "directives" from LLM output. Tries multiple patterns. */
+function extractDirectivesJson(text: string): string | null {
+  // 1. Code fence: ```json ... ```
+  const fenceMatch = text.match(/```json\s*([\s\S]*?)```/);
+  if (fenceMatch) return fenceMatch[1].trim();
+
+  // 2. Plain code fence: ``` ... ```
+  const plainFenceMatch = text.match(/```\s*([\s\S]*?)```/);
+  if (plainFenceMatch) {
+    const inner = plainFenceMatch[1].trim();
+    if (inner.startsWith("{")) return inner;
+  }
+
+  // 3. Raw JSON with "directives" key
+  const directivesMatch = text.match(/(\{"reasoning"[\s\S]*?"directives"\s*:\s*\[[\s\S]*?\]\s*\})/);
+  if (directivesMatch) {
+    try {
+      JSON.parse(directivesMatch[1]);
+      return directivesMatch[1];
+    } catch {
+      // Not valid JSON, try next strategy
+    }
+  }
+
+  // 4. Last JSON object in the text (walk backwards from last brace)
+  const lastBrace = text.lastIndexOf("}");
+  if (lastBrace >= 0) {
+    let depth = 0;
+    for (let i = lastBrace; i >= 0; i--) {
+      if (text[i] === "}") depth++;
+      if (text[i] === "{") depth--;
+      if (depth === 0) {
+        const candidate = text.slice(i, lastBrace + 1);
+        try {
+          const parsed = JSON.parse(candidate);
+          if (parsed.directives || parsed.reasoning) return candidate;
+        } catch {
+          // Not valid JSON
+        }
+        break;
+      }
+    }
+  }
+
+  // 5. Try the whole text
+  try {
+    const parsed = JSON.parse(text.trim());
+    if (parsed.directives || parsed.reasoning) return text.trim();
+  } catch {
+    // Not JSON
+  }
+
+  return null;
 }

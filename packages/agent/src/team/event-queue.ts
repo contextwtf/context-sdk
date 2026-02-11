@@ -130,6 +130,9 @@ export class EventQueue {
   private drain(): void {
     if (this.buffer.length === 0) return;
 
+    // Only drain if someone is waiting — otherwise events stay in buffer
+    if (!this.resolver) return;
+
     // 1. Coalesce — events with same key merge (latest wins)
     const coalesced = this.coalesce(this.buffer);
 
@@ -139,15 +142,11 @@ export class EventQueue {
       return a.arrivedAt - b.arrivedAt;
     });
 
-    // 3. Clear buffer
+    // 3. Clear buffer and deliver
     this.buffer = [];
-
-    // 4. Deliver to consumer
-    if (this.resolver) {
-      const resolve = this.resolver;
-      this.resolver = null;
-      resolve(coalesced);
-    }
+    const resolve = this.resolver;
+    this.resolver = null;
+    resolve(coalesced);
   }
 
   /** Coalesce events with same coalesceKey (keep latest). */

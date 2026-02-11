@@ -11,37 +11,50 @@
 import type { LlmClient, ToolDefinition, ChatMessage } from "../llm/client.js";
 import type { ScannerDispatch, ScannerResult, ScannerFinding } from "./types-v2.js";
 
+// ─── Types ───
+
+export interface MarketContext {
+  id: string;
+  name: string;
+  resolutionCriteria?: string;
+  category?: string;
+}
+
 // ─── System Prompt ───
 
-const SCANNER_SYSTEM = `You are a research scanner for a prediction market making desk.
+const SCANNER_SYSTEM = `You are a fast research scanner for a prediction market making desk.
 
-Your job: quickly gather facts about specific markets and return structured findings.
-You have tools to search the web and check data sources.
+Your ONLY job: search the web for facts about prediction markets, then return structured JSON findings.
 
-## Output Format
+## Workflow
+1. Read the market questions below
+2. Use web_search to find current facts (scores, prices, news, data)
+3. Return ONE JSON object with your findings
 
-After using tools, return your findings as JSON:
-\`\`\`json
-{
-  "findings": [
-    {
-      "marketId": "the-market-id",
-      "type": "score_update" | "correction" | "verification" | "news" | "data_release",
-      "data": { "key facts here" },
-      "confidence": 0.0-1.0,
-      "source": "where you got this",
-      "suggestedFairValue": 50
-    }
-  ]
-}
-\`\`\`
+## CRITICAL: Output Format
+
+You MUST end your response with exactly this JSON structure:
+{"findings":[{"marketId":"...","type":"...","data":{...},"confidence":0.0,"source":"...","suggestedFairValue":50}]}
+
+Field definitions:
+- marketId: the exact market ID string given to you
+- type: one of "score_update", "correction", "verification", "news", "data_release"
+- data: object with key facts (e.g. {"score":"Lakers 110, Celtics 98","quarter":"Q4"})
+- confidence: 0.0 to 1.0 — how sure you are of the facts
+- source: URL or name of source (e.g. "ESPN", "Reuters", "BLS.gov")
+- suggestedFairValue: probability in cents 1-99 (e.g. 75 means 75% likely YES). ONLY include if you found concrete evidence.
+
+## Example
+
+For a market "Will Lakers beat Celtics tonight?":
+{"findings":[{"marketId":"0xabc123","type":"score_update","data":{"score":"Lakers 95, Celtics 88","quarter":"Q3 4:32","source_url":"https://espn.com/nba/game/123"},"confidence":0.9,"source":"ESPN","suggestedFairValue":82}]}
 
 ## Rules
-- Be fast. Use minimum tool calls to get the answer.
-- Always cite your source.
-- If you can't find anything, return empty findings array.
-- suggestedFairValue is in cents (1-99). Only include if you have high confidence.
-- Distinguish between verified facts and speculation.`;
+- Search for EACH market separately if they are unrelated topics
+- If a market question is unclear from the name, search for the exact market name
+- Always return valid JSON — no markdown, no code fences, no explanation after the JSON
+- If you find nothing for a market, include it with type "verification", confidence 0.3, and no suggestedFairValue
+- Be fast: 1-2 searches per market, move on`;
 
 // ─── Core ───
 
@@ -52,17 +65,19 @@ After using tools, return your findings as JSON:
  * @param llmClient — LLM client to use
  * @param tools — tool definitions available to the scanner
  * @param executeTool — function that executes a tool call and returns result string
+ * @param marketContexts — optional market names/details so scanner can search effectively
  */
 export async function dispatchScanner(
   dispatch: ScannerDispatch,
   llmClient: LlmClient,
   tools: ToolDefinition[],
   executeTool: (name: string, input: Record<string, unknown>) => Promise<string>,
+  marketContexts?: MarketContext[],
 ): Promise<ScannerResult> {
   const startTime = Date.now();
   let toolCallsUsed = 0;
 
-  const userPrompt = buildUserPrompt(dispatch);
+  const userPrompt = buildUserPrompt(dispatch, marketContexts);
 
   const messages: ChatMessage[] = [
     { role: "user", content: userPrompt },
@@ -103,12 +118,13 @@ export async function dispatchScanner(
     for (const tc of response.toolCalls) {
       toolCallsUsed++;
       if (toolCallsUsed > dispatch.maxToolCalls) {
+        // Still respond to ALL tool calls (Kimi requires it), but skip execution
         toolResults.push({
           type: "tool_result",
           tool_use_id: tc.id,
           content: "Tool call limit reached. Provide your findings now.",
         });
-        break;
+        continue; // Don't break — must respond to every tool_call_id
       }
 
       try {
@@ -141,44 +157,117 @@ export async function dispatchScanner(
 
 // ─── Helpers ───
 
-function buildUserPrompt(dispatch: ScannerDispatch): string {
+function buildUserPrompt(dispatch: ScannerDispatch, contexts?: MarketContext[]): string {
+  const contextMap = new Map<string, MarketContext>();
+  if (contexts) {
+    for (const ctx of contexts) contextMap.set(ctx.id, ctx);
+  }
+
   const lines = [
-    `## Research Task: ${dispatch.focus}`,
+    `## Research Task`,
+    `${dispatch.focus}`,
     ``,
-    `Markets to research:`,
+    `## Markets to Research`,
   ];
 
   for (const marketId of dispatch.markets) {
-    lines.push(`- ${marketId}`);
+    const ctx = contextMap.get(marketId);
+    if (ctx) {
+      lines.push(`- ID: ${marketId}`);
+      lines.push(`  Question: "${ctx.name}"`);
+      if (ctx.resolutionCriteria) lines.push(`  Resolution: ${ctx.resolutionCriteria}`);
+      if (ctx.category) lines.push(`  Category: ${ctx.category}`);
+    } else {
+      lines.push(`- ID: ${marketId}`);
+    }
   }
 
   lines.push(``);
-  lines.push(`Be fast and focused. Use ${dispatch.maxToolCalls} tool calls maximum.`);
-  lines.push(`Return your findings as structured JSON.`);
+  lines.push(`Use web_search to find current facts for each market. ${dispatch.maxToolCalls} tool calls max.`);
+  lines.push(``);
+  lines.push(`IMPORTANT: End your response with a single JSON object: {"findings":[...]}`);
+  lines.push(`Include one finding per market. Use the exact market ID in each finding.`);
 
   return lines.join("\n");
 }
 
 function parseFindings(text: string, marketIds: string[]): ScannerFinding[] {
-  // Try to extract JSON from the response
-  const jsonMatch = text.match(/```json\s*([\s\S]*?)```/) ?? text.match(/\{[\s\S]*"findings"[\s\S]*\}/);
-  if (!jsonMatch) return [];
+  const jsonStr = extractJson(text);
+  if (!jsonStr) {
+    console.log(`[scanner] Could not extract JSON from response (${text.length} chars). First 200: ${text.slice(0, 200)}`);
+    return [];
+  }
 
   try {
-    const parsed = JSON.parse(jsonMatch[1] ?? jsonMatch[0]);
-    const findings = parsed.findings ?? [];
+    const parsed = JSON.parse(jsonStr);
+    const findings = parsed.findings ?? (Array.isArray(parsed) ? parsed : []);
 
     return findings
       .filter((f: any) => f && typeof f === "object")
       .map((f: any): ScannerFinding => ({
-        marketId: f.marketId ?? marketIds[0] ?? "unknown",
+        marketId: f.marketId ?? f.market_id ?? marketIds[0] ?? "unknown",
         type: f.type ?? "verification",
         data: f.data ?? {},
         confidence: typeof f.confidence === "number" ? Math.max(0, Math.min(1, f.confidence)) : 0.5,
         source: f.source ?? "unknown",
-        suggestedFairValue: typeof f.suggestedFairValue === "number" ? f.suggestedFairValue : undefined,
+        suggestedFairValue: typeof f.suggestedFairValue === "number"
+          ? Math.max(1, Math.min(99, Math.round(f.suggestedFairValue)))
+          : typeof f.suggested_fair_value === "number"
+            ? Math.max(1, Math.min(99, Math.round(f.suggested_fair_value)))
+            : undefined,
       }));
-  } catch {
+  } catch (err) {
+    console.log(`[scanner] JSON parse error: ${err instanceof Error ? err.message : err}`);
+    console.log(`[scanner] Attempted to parse: ${jsonStr.slice(0, 300)}`);
     return [];
   }
+}
+
+/** Extract JSON from LLM output. Tries multiple patterns. */
+function extractJson(text: string): string | null {
+  // 1. Code fence: ```json ... ```
+  const fenceMatch = text.match(/```json\s*([\s\S]*?)```/);
+  if (fenceMatch) return fenceMatch[1].trim();
+
+  // 2. Code fence without language: ``` ... ```
+  const plainFenceMatch = text.match(/```\s*([\s\S]*?)```/);
+  if (plainFenceMatch) {
+    const inner = plainFenceMatch[1].trim();
+    if (inner.startsWith("{") || inner.startsWith("[")) return inner;
+  }
+
+  // 3. Raw JSON object with "findings" key anywhere in text
+  const findingsMatch = text.match(/(\{"findings"\s*:\s*\[[\s\S]*\][\s\S]*?\})/);
+  if (findingsMatch) return findingsMatch[1];
+
+  // 4. Last JSON object in the text (scanner was told to end with JSON)
+  const lastBrace = text.lastIndexOf("}");
+  if (lastBrace >= 0) {
+    // Walk backwards to find the matching opening brace
+    let depth = 0;
+    for (let i = lastBrace; i >= 0; i--) {
+      if (text[i] === "}") depth++;
+      if (text[i] === "{") depth--;
+      if (depth === 0) {
+        const candidate = text.slice(i, lastBrace + 1);
+        try {
+          JSON.parse(candidate);
+          return candidate;
+        } catch {
+          // Not valid JSON, keep looking
+        }
+        break;
+      }
+    }
+  }
+
+  // 5. Try the whole text as JSON
+  try {
+    JSON.parse(text.trim());
+    return text.trim();
+  } catch {
+    // Not JSON
+  }
+
+  return null;
 }

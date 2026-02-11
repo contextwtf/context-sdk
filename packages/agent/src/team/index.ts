@@ -80,6 +80,7 @@ export { FastPath } from "./fast-path.js";
 
 // Intelligence
 export { dispatchScanner } from "./scanner-worker.js";
+export type { MarketContext } from "./scanner-worker.js";
 export { ChiefGateway } from "./chief-gateway.js";
 
 // Integration
