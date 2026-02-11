@@ -64,10 +64,13 @@ Every cycle, check the ORACLE vs MARKET enrichment for gaps. When you see a 5+ c
 - **ESPN data is ground truth for sports events.** If web search contradicts ESPN, trust ESPN.
 - Web search can return inconsistent results — if you see contradictions, rely on ESPN/Vegas for sports.
 
-## Trading Rules
+## Execution Rules — BE AGGRESSIVE
+- **BUY at the current ask price** (or 1¢ above). Do NOT place bids below market hoping to get filled later. You want IMMEDIATE fills.
+- **SELL at the current bid price** (or 1¢ below). Hit the bid, don't post asks above market.
+- The orderbook shows you the prices. If best ask is 65¢ and you want to buy, price your order at 65¢ — NOT at 55¢ or 60¢.
+- Stale limit orders sitting on the book are USELESS. By the time they fill, the edge is gone.
 - Max 200 contracts per market
 - Only take positions where you have HIGH confidence the oracle is wrong (web search confirmed)
-- Price your orders inside the spread — you want fills, not to wait
 - If the oracle and web search agree, skip (no edge)
 - ALWAYS web search before trading — never trust your priors alone
 - Write key findings to memory (what you verified, what was wrong)

@@ -18,6 +18,27 @@
  *   DRY_RUN=false npx tsx examples/team/run-team.ts
  */
 
+import { readFileSync } from "fs";
+import { resolve } from "path";
+
+// Load .env file (same pattern as other scripts)
+const envPath = resolve(process.cwd(), ".env");
+try {
+  for (const line of readFileSync(envPath, "utf-8").split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) continue;
+    const eq = trimmed.indexOf("=");
+    if (eq === -1) continue;
+    const key = trimmed.slice(0, eq);
+    let val = trimmed.slice(eq + 1);
+    // Strip surrounding quotes
+    if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
+      val = val.slice(1, -1);
+    }
+    if (!process.env[key]) process.env[key] = val;
+  }
+} catch {}
+
 import type { Hex } from "viem";
 import { TeamRuntime, ConsoleChatBridge, type ChatBridge } from "@context-markets/agent/team";
 import { RiskSentinelAgent } from "./agents/risk-sentinel.js";
@@ -51,13 +72,29 @@ async function main() {
 
   let chatBridge: ChatBridge;
 
-  if (process.env.TELEGRAM_BOT_TOKEN && process.env.TELEGRAM_CHAT_ID) {
+  const telegramChatId = process.env.TELEGRAM_CHAT_ID;
+  const telegramFallback = process.env.TELEGRAM_BOT_TOKEN;
+
+  if ((telegramFallback || process.env.TELEGRAM_BOT_TOKEN_CHIEF) && telegramChatId) {
+    // Collect per-agent tokens (only include ones that are explicitly set)
+    const botTokens: Partial<Record<string, string>> = {};
+    if (process.env.TELEGRAM_BOT_TOKEN_CHIEF) botTokens.chief = process.env.TELEGRAM_BOT_TOKEN_CHIEF;
+    if (process.env.TELEGRAM_BOT_TOKEN_SCANNER) botTokens.scanner = process.env.TELEGRAM_BOT_TOKEN_SCANNER;
+    if (process.env.TELEGRAM_BOT_TOKEN_PRICER) botTokens.pricer = process.env.TELEGRAM_BOT_TOKEN_PRICER;
+    if (process.env.TELEGRAM_BOT_TOKEN_RISK) botTokens.risk = process.env.TELEGRAM_BOT_TOKEN_RISK;
+    if (process.env.TELEGRAM_BOT_TOKEN_CLOSER) botTokens.closer = process.env.TELEGRAM_BOT_TOKEN_CLOSER;
+
+    const hasPerAgent = Object.keys(botTokens).length > 0;
+
     chatBridge = new TelegramBridge({
-      botToken: process.env.TELEGRAM_BOT_TOKEN,
-      chatId: process.env.TELEGRAM_CHAT_ID,
+      botTokens: hasPerAgent ? botTokens as any : undefined,
+      fallbackToken: telegramFallback,
+      chatId: telegramChatId,
       verbosity: "normal",
     });
-    console.log("[team] Telegram bridge configured");
+
+    const mode = hasPerAgent ? `multi-bot (${Object.keys(botTokens).length} agent tokens)` : "single-bot";
+    console.log(`[team] Telegram bridge configured (${mode})`);
   } else {
     chatBridge = new ConsoleChatBridge();
     console.log("[team] Using console bridge (set TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID for Telegram)");
@@ -66,7 +103,7 @@ async function main() {
   // ─── Create Agents ───
 
   const agents = {
-    risk: new RiskSentinelAgent(),
+    risk: new RiskSentinelAgent({ maxMarketLoss: 1000 }),
     scanner: new ScannerAgent(),
     pricer: new PricerAgent(),
     closer: new CloserAgent(),

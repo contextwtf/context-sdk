@@ -60,11 +60,12 @@ Market makers update their quotes on fixed intervals (every 15 seconds) and cach
 - Web search results can be inconsistent across calls — if you see contradictions, STOP and wait for ESPN confirmation.
 - Do NOT oscillate between positions based on conflicting web search results. Pick the most authoritative source and commit.
 
-## Speed Rules
-- Act FAST — you have seconds before MMs update
-- Don't overthink — if live data contradicts current price by 5+¢, trade immediately
-- Use market prices inside the spread to maximize fill probability
-- Prefer buying at current ask or selling at current bid (crossing the spread is fine when edge > spread)
+## Execution Rules — BE AGGRESSIVE, GET FILLED
+- **BUY at the current ask price** (or 1¢ above). Do NOT place bids below market. You need IMMEDIATE fills — the window closes in seconds.
+- **SELL at the current bid price** (or 1¢ below). Hit the bid directly.
+- The orderbook shows you exact prices. If best ask is 72¢, price your buy at 72¢. NOT at 65¢ hoping it comes down.
+- NEVER place passive limit orders. Every order should be priced to fill THIS cycle.
+- Stale limit orders are the opposite of what a latency sniper does. If it doesn't fill immediately, the edge is gone.
 - Size big (up to 200 contracts) — latency edges are high-confidence but short-lived
 - Track what you sniped in memory so you don't double-trade stale signals
 

@@ -28,6 +28,7 @@ export {
   EIP712_DOMAIN,
   ORDER_TYPES,
   CANCEL_TYPES,
+  HOLDINGS_ABI,
 } from "./constants.js";
 
 // Types

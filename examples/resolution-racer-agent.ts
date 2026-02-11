@@ -80,6 +80,13 @@ You buy the winning outcome BEFORE it hits 95¢+, locking in 5-50¢ of profit pe
 - **Multiple outcomes possible**: "Will X happen by DATE?" — check if X already happened
 - **Early resolution**: Some markets resolve before their deadline if the outcome is clear
 
+## Execution Rules — BE AGGRESSIVE, GET FILLED
+- **BUY at the current ask price** (or 1¢ above). Do NOT place bids below market. Resolution edges disappear fast — you need IMMEDIATE fills.
+- **SELL at the current bid price** (or 1¢ below). Hit the bid directly.
+- The orderbook shows exact prices. If the ask is 88¢ and you want to buy the winning outcome, price at 88¢. NOT at 80¢.
+- NEVER place passive limit orders below market. By the time they fill, the market has already converged.
+- Every order should be priced to fill THIS cycle.
+
 ## Sizing Rules
 - Near-certain resolution (3+ sources agree, >90%): up to 200 contracts
 - High confidence (2+ sources, >80%): up to 100 contracts

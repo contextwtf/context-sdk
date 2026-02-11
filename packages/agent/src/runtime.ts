@@ -1,10 +1,14 @@
-import type { Hex } from "viem";
+import { type Hex, createPublicClient, http, formatUnits } from "viem";
+import { baseSepolia } from "viem/chains";
 import {
   ContextClient,
   ContextTrader,
   type ContextTraderOptions,
   type Order,
   type Fill,
+  HOLDINGS_ADDRESS,
+  HOLDINGS_ABI,
+  USDC_ADDRESS,
 } from "@context-markets/sdk";
 import type {
   Strategy,
@@ -48,6 +52,7 @@ export class AgentRuntime {
   private readonly fairValueService: FairValueService | null;
 
   private running = false;
+  private balanceLogged = false;
   private timer: ReturnType<typeof setTimeout> | null = null;
   private abortController: AbortController | null = null;
 
@@ -363,7 +368,7 @@ export class AgentRuntime {
       };
     }
 
-    const [rawPortfolio, rawOrders, balance] = await Promise.all([
+    const [rawPortfolio, rawOrders, balance, onChainBalance] = await Promise.all([
       this.trader.getMyPortfolio().catch(() => ({
         address: this.trader!.address,
         positions: [],
@@ -373,6 +378,15 @@ export class AgentRuntime {
         address: this.trader!.address,
         usdc: 0,
       })),
+      // On-chain fallback: read Holdings.balanceOf directly (in case API is stale)
+      createPublicClient({ chain: baseSepolia, transport: http() })
+        .readContract({
+          address: HOLDINGS_ADDRESS,
+          abi: HOLDINGS_ABI,
+          functionName: "balanceOf",
+          args: [this.trader!.address, USDC_ADDRESS],
+        })
+        .catch(() => 0n),
     ]);
 
     // Normalize portfolio: API returns { portfolio: [...], marketIds: [] }
@@ -413,7 +427,7 @@ export class AgentRuntime {
         ...o,
         outcome: o.outcome ?? (o.outcomeIndex === 1 ? "yes" : "no"),
         side: typeof o.side === "string" ? o.side : o.side === 0 ? "buy" : "sell",
-        price: typeof o.price === "number" ? o.price : Number(o.price),
+        price: typeof o.price === "number" ? o.price : Number(o.price) / 10000,
         size: typeof o.size === "number" ? o.size : Number(o.size) / 1e6,
         filledSize: typeof o.filledSize === "number"
           ? o.filledSize
@@ -428,23 +442,26 @@ export class AgentRuntime {
         percentFilled: o.percentFilled ?? 0,
       }));
 
-    // Normalize balance — API returns usdc as a rich object:
-    //   { balance: "4250000000", settlementBalance: "...", walletBalance: "..." }
-    // where values are raw 6-decimal strings. We need USDC as a human-readable number.
+    // Normalize balance — use API's settlementBalance (Holdings), fall back to on-chain read
     const rawBal = balance as any;
-    let usdcAmount = 0;
+    let apiUsdcAmount = 0;
     if (rawBal.usdc != null) {
       if (typeof rawBal.usdc === "object" && rawBal.usdc !== null) {
-        // Rich object from API — use settlementBalance (Holdings) or balance
         const raw = rawBal.usdc.settlementBalance ?? rawBal.usdc.balance ?? "0";
-        usdcAmount = Number(raw) / 1e6;
+        apiUsdcAmount = Number(raw) / 1e6;
       } else {
-        // Simple number or string
-        usdcAmount = Number(rawBal.usdc) || 0;
+        apiUsdcAmount = Number(rawBal.usdc) || 0;
       }
     }
+    const onChainUsdcAmount = Number(formatUnits(onChainBalance as bigint, 6));
+    // Use whichever is higher — API can be stale after burns/redeems
+    const usdcAmount = Math.max(apiUsdcAmount, onChainUsdcAmount);
+    if (!this.balanceLogged) {
+      console.log(`[balance] API settlementBalance: $${apiUsdcAmount.toFixed(2)}, on-chain Holdings: $${onChainUsdcAmount.toFixed(2)}, using: $${usdcAmount.toFixed(2)}`);
+      this.balanceLogged = true;
+    }
     const normalizedBalance = {
-      address: rawBal.address ?? (this.trader?.address || ""),
+      address: this.trader?.address || "",
       usdc: usdcAmount,
     };
 

@@ -5,13 +5,15 @@
  * to the TeamRuntime. Agents post updates back through the bridge.
  */
 
+import type { AgentRole } from "./board.js";
+
 // ─── Interface ───
 
 export interface ChatBridge {
-  /** Post a normal message to the chat channel. */
-  send(prefix: string, content: string): Promise<void>;
-  /** Post a high-visibility alert (e.g., @channel mention). */
-  alert(content: string): Promise<void>;
+  /** Post a normal message to the chat channel. `role` identifies which agent is sending. */
+  send(role: AgentRole, prefix: string, content: string): Promise<void>;
+  /** Post a high-visibility alert (e.g., @channel mention). `role` identifies which agent sends. */
+  alert(role: AgentRole, content: string): Promise<void>;
   /** Register a handler for incoming human messages. */
   onMessage(handler: (content: string, mentionedAgent?: string) => void): void;
   /** Start listening for messages. */
@@ -25,11 +27,11 @@ export interface ChatBridge {
 export class ConsoleChatBridge implements ChatBridge {
   private handler?: (content: string, mentionedAgent?: string) => void;
 
-  async send(prefix: string, content: string): Promise<void> {
+  async send(_role: AgentRole, prefix: string, content: string): Promise<void> {
     console.log(`[chat] ${prefix}: ${content}`);
   }
 
-  async alert(content: string): Promise<void> {
+  async alert(_role: AgentRole, content: string): Promise<void> {
     console.log(`[chat] 🚨 ALERT: ${content}`);
   }
 

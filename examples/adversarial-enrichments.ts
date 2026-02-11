@@ -322,6 +322,136 @@ export const resolutionProximity: ContextEnrichment = {
   },
 };
 
+// ─── Orderbook Arbitrage ───
+
+/**
+ * Scans all orderbooks for arbitrage opportunities:
+ * 1. Inverted spreads: YES ask < YES bid (buy ask, sell bid)
+ * 2. Deep sweep: sweep multiple ask levels profitably into resting bids
+ *
+ * The orderbook is presented from the YES perspective. An "inverted" spread
+ * means you can buy YES tokens at the ask and immediately sell at the bid.
+ * This happens when NO-side orders create YES-equivalent prices that cross.
+ *
+ * Used by: Microstructure Reader
+ */
+export const orderbookArbitrage: ContextEnrichment = {
+  name: "Orderbook Arbitrage",
+  compute(current, _history) {
+    const lines: string[] = [];
+
+    for (const snap of current.markets) {
+      const title = snap.market.title || (snap.market as any).question || "";
+      const bids = snap.orderbook.bids; // YES bids, sorted desc by price
+      const asks = snap.orderbook.asks; // YES asks, sorted asc by price
+
+      if (bids.length === 0 || asks.length === 0) continue;
+
+      const bestBid = bids[0].price;
+      const bestAsk = asks[0].price;
+
+      // Check for inverted spread (best ask < best bid)
+      if (bestAsk < bestBid) {
+        const instantProfit = bestBid - bestAsk;
+        const minSize = Math.min(bids[0].size ?? 0, asks[0].size ?? 0);
+
+        // Calculate full sweep profit across multiple levels
+        const sweep = calculateSweepProfit(bids, asks);
+        const arbSize = sweep.totalContracts > 0 ? sweep.totalContracts : minSize;
+
+        lines.push(`🔴 ARBITRAGE — "${title}"`);
+        lines.push(`  INVERTED SPREAD: Ask ${bestAsk}¢ < Bid ${bestBid}¢ (${instantProfit}¢ profit/contract)`);
+        lines.push(`  Size: ${arbSize} contracts, Profit: $${((sweep.totalProfit || instantProfit * minSize) / 100).toFixed(2)}`);
+        lines.push(`  >>> EXECUTE THESE EXACT ORDERS:`);
+        lines.push(`  >>> { "type": "place_order", "market": "${title}", "side": "buy", "outcome": "yes", "priceCents": ${bestAsk}, "size": ${arbSize} }`);
+        lines.push(`  >>> { "type": "place_order", "market": "${title}", "side": "sell", "outcome": "yes", "priceCents": ${bestBid}, "size": ${arbSize} }`);
+
+        if (sweep.totalContracts > 0 && sweep.levels.length > 1) {
+          lines.push(`  Level breakdown:`);
+          for (const level of sweep.levels) {
+            lines.push(`    ${level.size} @ buy ${level.buyPrice}¢ → sell ${level.sellPrice}¢ = +${level.profit.toFixed(1)}¢`);
+          }
+        }
+        lines.push("");
+      }
+
+      // Also check for near-arbitrage (spread < 2¢ with deep liquidity)
+      else if (bestBid - bestAsk <= 2 && bestBid > bestAsk) {
+        // Already inverted but marginal — worth flagging
+        const profit = bestBid - bestAsk;
+        lines.push(`⚠️ NEAR-ARBITRAGE — "${title}"`);
+        lines.push(`  Spread: ${profit}¢ (Ask ${bestAsk}¢ / Bid ${bestBid}¢)`);
+        lines.push("");
+      }
+    }
+
+    return lines.length > 0 ? lines.join("\n") : null;
+  },
+};
+
+/**
+ * Given YES bids (desc) and YES asks (asc), calculate how many contracts
+ * you can buy at asks and sell at bids for a profit.
+ * Walks both sides of the book until the spread is no longer inverted.
+ */
+function calculateSweepProfit(
+  bids: Array<{ price: number; size?: number }>,
+  asks: Array<{ price: number; size?: number }>,
+): {
+  totalContracts: number;
+  totalProfit: number;
+  avgBuyPrice: number;
+  avgSellPrice: number;
+  levels: Array<{ buyPrice: number; sellPrice: number; size: number; profit: number }>;
+} {
+  const levels: Array<{ buyPrice: number; sellPrice: number; size: number; profit: number }> = [];
+  let totalContracts = 0;
+  let totalCost = 0;
+  let totalRevenue = 0;
+
+  let bidIdx = 0;
+  let askIdx = 0;
+  let bidRemaining = bids[0]?.size ?? 0;
+  let askRemaining = asks[0]?.size ?? 0;
+
+  while (bidIdx < bids.length && askIdx < asks.length) {
+    const bidPrice = bids[bidIdx].price;
+    const askPrice = asks[askIdx].price;
+
+    // Stop when spread is no longer inverted
+    if (askPrice >= bidPrice) break;
+
+    const size = Math.min(bidRemaining, askRemaining);
+    if (size <= 0) break;
+
+    const profit = (bidPrice - askPrice) * size;
+    levels.push({ buyPrice: askPrice, sellPrice: bidPrice, size, profit });
+    totalContracts += size;
+    totalCost += askPrice * size;
+    totalRevenue += bidPrice * size;
+
+    bidRemaining -= size;
+    askRemaining -= size;
+
+    if (bidRemaining <= 0) {
+      bidIdx++;
+      bidRemaining = bids[bidIdx]?.size ?? 0;
+    }
+    if (askRemaining <= 0) {
+      askIdx++;
+      askRemaining = asks[askIdx]?.size ?? 0;
+    }
+  }
+
+  return {
+    totalContracts,
+    totalProfit: totalRevenue - totalCost,
+    avgBuyPrice: totalContracts > 0 ? totalCost / totalContracts : 0,
+    avgSellPrice: totalContracts > 0 ? totalRevenue / totalContracts : 0,
+    levels,
+  };
+}
+
 // ─── Helpers ───
 
 function getMid(snap: { orderbook: { bids: any[]; asks: any[] } }): number {

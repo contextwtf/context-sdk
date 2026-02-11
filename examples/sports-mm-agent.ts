@@ -32,15 +32,33 @@ import {
 import { ContextClient, ContextTrader } from "@context-markets/sdk";
 import type { Hex } from "viem";
 
+const SPORTS_KEYWORDS = [
+  "defeat", "beat", "win ", "wins ", "score", "points", "goals",
+  "game", "match", "tournament", "playoff", "championship",
+  "basketball", "football", "soccer", "hockey", "baseball",
+  "nba", "nfl", "mlb", "nhl", "ncaab", "ncaaf",
+  "premier league", "la liga", "bundesliga", "serie a", "ligue 1",
+  "champions league", "europa league", "mls",
+  "lakers", "celtics", "warriors", "knicks", "pacers", "rockets", "mavericks", "suns", "spurs",
+  "totals", "over", "under",
+];
+
+function isSportsMarket(market: { id: string; question?: string; title?: string }): boolean {
+  const text = (market.question ?? market.title ?? "").toLowerCase();
+  return SPORTS_KEYWORDS.some(kw => text.includes(kw));
+}
+
 async function ensureInventory(trader: ContextTrader, targetPerMarket: number) {
-  console.log(`[setup] Ensuring ${targetPerMarket} sets per active market...`);
+  console.log(`[setup] Ensuring ${targetPerMarket} sets per active sports market...`);
 
   const client = trader as ContextClient;
   const result = await client.searchMarkets({ status: "active" });
-  const markets = result.markets;
+  const allMarkets = result.markets;
+  const markets = allMarkets.filter(isSportsMarket);
 
+  console.log(`[setup] ${markets.length}/${allMarkets.length} active markets are sports`);
   if (markets.length === 0) {
-    console.log("[setup] No active markets found");
+    console.log("[setup] No active sports markets found");
     return;
   }
 
@@ -119,7 +137,7 @@ async function main() {
       maxPositionSize: 10000,
       maxOpenOrders: 500,
       maxOrderSize: 200,
-      maxLoss: -1000,
+      maxLoss: -500,
     },
     intervalMs: 15_000,       // 15s cycles for responsive quoting
     dryRun,

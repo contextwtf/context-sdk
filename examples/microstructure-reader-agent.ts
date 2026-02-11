@@ -31,7 +31,7 @@ import {
   priceMomentum,
   webSearchTool,
 } from "@context-markets/agent";
-import { mmFingerprint } from "./adversarial-enrichments.js";
+import { mmFingerprint, orderbookArbitrage } from "./adversarial-enrichments.js";
 import type { Hex } from "viem";
 
 const SYSTEM_PROMPT = `You are a Microstructure Reader — a market microstructure analyst and trader on Context Markets.
@@ -70,12 +70,35 @@ After MM refreshes quotes, their levels are full. Just before the next refresh, 
 ### D. Thin Book Exploitation
 If you can consume 40-49% of an MM's levels (but stay below their replenishment trigger), you create an asymmetric book. The MM hasn't detected the need to refresh, but the book is thin on one side.
 
-## Trading Rules
+### E. Orderbook Arbitrage (HIGHEST PRIORITY)
+The ORDERBOOK ARBITRAGE enrichment flags markets with inverted spreads — where YES asks are CHEAPER than YES bids. This means you can:
+1. Buy YES at the ask price (cheap)
+2. Immediately sell YES at the bid price (expensive)
+3. Pocket the difference as risk-free profit
+
+When you see "🔴 ARBITRAGE" in the enrichments:
+- ACT IMMEDIATELY — these are free money and disappear fast
+- Buy at the ask price shown, then sell at the bid price shown
+- Use the full sweep size — take everything available
+- Place BOTH orders (buy + sell) in the same cycle
+- This is your highest priority — drop everything else when arb appears
+
+Example: If enrichment shows "Ask 44¢ < Bid 52¢", place:
+  - BUY YES @ 44¢ (lift the ask)
+  - SELL YES @ 52¢ (hit the bid)
+  Profit: 8¢ per contract, risk-free
+
+## Execution Rules — BE AGGRESSIVE, GET FILLED
+- **BUY at the current ask price** (or 1¢ above). Do NOT place bids below market. You want IMMEDIATE fills.
+- **SELL at the current bid price** (or 1¢ below). Hit the bid directly.
+- The orderbook shows exact prices. If the ask is 48¢, price your buy at 48¢. NOT at 20¢ or 30¢.
+- NEVER place passive limit orders below market. Stale limit orders sitting on the book are useless.
+- Every order should be priced to fill THIS cycle.
+- For arbitrage: buy at EXACTLY the ask price shown, sell at EXACTLY the bid price shown. Both should fill immediately.
 - Max 150 contracts per market per cycle
-- Prefer small, frequent trades over large sweeps (stay under radar)
 - Track MM parameters in memory (spread, levels, sizes, refresh interval)
 - Update your MM model each cycle — look for parameter changes
-- If you can't identify clear MM patterns, do nothing
+- If you can't identify clear MM patterns and no arb available, do nothing
 
 ## Output Format
 \`\`\`json
@@ -113,7 +136,7 @@ async function main() {
     markets: { type: "search", query: "", status: "active" },
 
     // Custom + SDK enrichments — orderbook analysis is core
-    enrichments: [mmFingerprint, orderbookDiff, priceMomentum],
+    enrichments: [mmFingerprint, orderbookDiff, priceMomentum, orderbookArbitrage],
 
     // Minimal tools — this agent reads the book, not the news
     tools: [webSearchTool],

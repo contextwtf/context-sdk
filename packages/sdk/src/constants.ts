@@ -87,6 +87,16 @@ export const ERC20_ABI = [
 
 export const HOLDINGS_ABI = [
   {
+    name: "balanceOf",
+    type: "function",
+    stateMutability: "view",
+    inputs: [
+      { name: "user", type: "address" },
+      { name: "token", type: "address" },
+    ],
+    outputs: [{ name: "", type: "uint256" }],
+  },
+  {
     name: "setOperator",
     type: "function",
     stateMutability: "nonpayable",
