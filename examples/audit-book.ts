@@ -4,7 +4,7 @@
  * Usage:
  *   CONTEXT_API_KEY=... CONTEXT_PRIVATE_KEY=... npx tsx examples/audit-book.ts
  */
-import { ContextClient } from "@context-markets/sdk";
+import { ContextClient } from "@contextwtf/sdk";
 import type { Hex } from "viem";
 
 async function main() {

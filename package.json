@@ -1,8 +1,15 @@
 {
-  "name": "@context-markets/sdk",
+  "name": "@contextwtf/sdk",
   "version": "0.2.0",
   "description": "TypeScript SDK for Context prediction markets",
   "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/contextwtf/context-sdk.git"
+  },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com"
+  },
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",

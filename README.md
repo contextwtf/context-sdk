@@ -1,4 +1,4 @@
-# Context Markets SDK
+# Context SDK
 
 TypeScript SDK for trading on [Context Markets](https://context.markets) — an AI-powered prediction market platform on Base.
 
@@ -7,7 +7,7 @@ For the full quickstart guide, API reference, and developer docs, visit [docs.co
 ## Install
 
 ```bash
-npm install @context-markets/sdk
+npm install @contextwtf/sdk
 ```
 
 ## Quick Start
@@ -15,7 +15,7 @@ npm install @context-markets/sdk
 ### Read Market Data (no auth)
 
 ```ts
-import { ContextClient } from "@context-markets/sdk";
+import { ContextClient } from "@contextwtf/sdk";
 
 const ctx = new ContextClient();
 
@@ -27,7 +27,7 @@ const oracle = await ctx.markets.oracle(markets[0].id);
 ### Place an Order
 
 ```ts
-import { ContextClient } from "@context-markets/sdk";
+import { ContextClient } from "@contextwtf/sdk";
 
 const ctx = new ContextClient({
   apiKey: process.env.CONTEXT_API_KEY!,
@@ -43,7 +43,7 @@ await ctx.orders.create({
 });
 ```
 
-Need an API key? Message **@fieldviolence** on [X](https://x.com/fieldviolence) or Discord.
+Need an API key? Visit [context.markets](https://context.markets) or reach out on Discord.
 
 ## API Reference
 
