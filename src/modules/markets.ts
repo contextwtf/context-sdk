@@ -7,11 +7,15 @@ import type {
   Orderbook,
   SimulateTradeParams,
   SimulateResult,
-  Candle,
+  PriceHistory,
   OracleResponse,
-  ActivityItem,
+  OracleQuotesResponse,
+  OracleQuoteRequestResult,
+  ActivityResponse,
   SearchMarketsParams,
+  GetOrderbookParams,
   GetPriceHistoryParams,
+  GetActivityParams,
 } from "../types.js";
 
 export class Markets {
@@ -21,20 +25,37 @@ export class Markets {
     return this.http.get<MarketList>(ENDPOINTS.markets.list, {
       search: params?.query,
       status: params?.status,
+      sortBy: params?.sortBy,
+      sort: params?.sort,
       limit: params?.limit,
+      cursor: params?.cursor,
+      visibility: params?.visibility,
+      resolutionStatus: params?.resolutionStatus,
+      creator: params?.creator,
+      category: params?.category,
+      createdAfter: params?.createdAfter,
     });
   }
 
   async get(id: string): Promise<Market> {
-    return this.http.get<Market>(ENDPOINTS.markets.get(id));
+    const res = await this.http.get<{ market: Market }>(
+      ENDPOINTS.markets.get(id),
+    );
+    return res.market;
   }
 
   async quotes(marketId: string): Promise<Quotes> {
     return this.http.get<Quotes>(ENDPOINTS.markets.quotes(marketId));
   }
 
-  async orderbook(marketId: string): Promise<Orderbook> {
-    return this.http.get<Orderbook>(ENDPOINTS.markets.orderbook(marketId));
+  async orderbook(
+    marketId: string,
+    params?: GetOrderbookParams,
+  ): Promise<Orderbook> {
+    return this.http.get<Orderbook>(ENDPOINTS.markets.orderbook(marketId), {
+      depth: params?.depth,
+      outcomeIndex: params?.outcomeIndex,
+    });
   }
 
   async simulate(
@@ -47,6 +68,7 @@ export class Markets {
         side: params.side,
         amount: params.amount,
         amountType: params.amountType ?? "usd",
+        ...(params.trader ? { trader: params.trader } : {}),
       },
     );
   }
@@ -54,9 +76,9 @@ export class Markets {
   async priceHistory(
     marketId: string,
     params?: GetPriceHistoryParams,
-  ): Promise<Candle[]> {
-    return this.http.get<Candle[]>(ENDPOINTS.markets.prices(marketId), {
-      interval: params?.interval,
+  ): Promise<PriceHistory> {
+    return this.http.get<PriceHistory>(ENDPOINTS.markets.prices(marketId), {
+      timeframe: params?.timeframe ?? params?.interval,
     });
   }
 
@@ -64,13 +86,44 @@ export class Markets {
     return this.http.get<OracleResponse>(ENDPOINTS.markets.oracle(marketId));
   }
 
-  async activity(marketId: string): Promise<ActivityItem[]> {
-    return this.http.get<ActivityItem[]>(
-      ENDPOINTS.markets.activity(marketId),
+  async oracleQuotes(marketId: string): Promise<OracleQuotesResponse> {
+    return this.http.get<OracleQuotesResponse>(
+      ENDPOINTS.markets.oracleQuotes(marketId),
     );
   }
 
-  async globalActivity(): Promise<ActivityItem[]> {
-    return this.http.get<ActivityItem[]>(ENDPOINTS.activity.global);
+  async requestOracleQuote(
+    marketId: string,
+  ): Promise<OracleQuoteRequestResult> {
+    return this.http.post<OracleQuoteRequestResult>(
+      ENDPOINTS.markets.oracleQuotes(marketId),
+      {},
+    );
+  }
+
+  async activity(
+    marketId: string,
+    params?: GetActivityParams,
+  ): Promise<ActivityResponse> {
+    return this.http.get<ActivityResponse>(
+      ENDPOINTS.markets.activity(marketId),
+      {
+        cursor: params?.cursor,
+        limit: params?.limit,
+        types: params?.types,
+        startTime: params?.startTime,
+        endTime: params?.endTime,
+      },
+    );
+  }
+
+  async globalActivity(params?: GetActivityParams): Promise<ActivityResponse> {
+    return this.http.get<ActivityResponse>(ENDPOINTS.activity.global, {
+      cursor: params?.cursor,
+      limit: params?.limit,
+      types: params?.types,
+      startTime: params?.startTime,
+      endTime: params?.endTime,
+    });
   }
 }

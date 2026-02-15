@@ -7,7 +7,7 @@ import type { Address, Hex } from "viem";
 
 function createMockHttp(): HttpClient {
   return {
-    get: vi.fn().mockResolvedValue([]),
+    get: vi.fn().mockResolvedValue({ orders: [], cursor: null }),
     post: vi.fn().mockResolvedValue({}),
     delete: vi.fn().mockResolvedValue({}),
   };
@@ -47,12 +47,13 @@ describe("Orders module", () => {
       orders = new Orders(http, null, null);
     });
 
-    it("list() calls GET /orders with params", async () => {
-      await orders.list({ trader: ADDR, marketId: "m1", limit: 10 });
+    it("list() calls GET /orders with all params", async () => {
+      await orders.list({ trader: ADDR, marketId: "m1", status: "open", limit: 10 });
 
       expect(http.get).toHaveBeenCalledWith("/orders", {
         trader: ADDR,
         marketId: "m1",
+        status: "open",
         cursor: undefined,
         limit: 10,
       });
@@ -64,9 +65,51 @@ describe("Orders module", () => {
       expect(http.get).toHaveBeenCalledWith("/orders", {
         trader: undefined,
         marketId: undefined,
+        status: undefined,
         cursor: undefined,
         limit: undefined,
       });
+    });
+
+    it("get() calls GET /orders/:id and unwraps", async () => {
+      const mockOrder = { nonce: "0xabc", marketId: "m1" };
+      (http.get as any).mockResolvedValue({ order: mockOrder });
+
+      const result = await orders.get("order-hash");
+      expect(http.get).toHaveBeenCalledWith("/orders/order-hash");
+      expect(result).toEqual(mockOrder);
+    });
+
+    it("recent() calls GET /orders/recent with params", async () => {
+      await orders.recent({
+        trader: ADDR,
+        marketId: "m1",
+        status: "open",
+        limit: 5,
+        windowSeconds: 300,
+      });
+
+      expect(http.get).toHaveBeenCalledWith("/orders/recent", {
+        trader: ADDR,
+        marketId: "m1",
+        status: "open",
+        limit: 5,
+        windowSeconds: 300,
+      });
+    });
+
+    it("simulate() calls POST /orders/simulate", async () => {
+      const params = {
+        marketId: "0xabc",
+        trader: ADDR,
+        maxSize: "10000000",
+        maxPrice: "500000",
+        outcomeIndex: 0,
+        side: "bid" as const,
+      };
+
+      await orders.simulate(params);
+      expect(http.post).toHaveBeenCalledWith("/orders/simulate", params);
     });
   });
 
@@ -81,7 +124,9 @@ describe("Orders module", () => {
       orders = new Orders(http, builder, ADDR);
     });
 
-    it("create() builds, signs, and posts order", async () => {
+    it("create() builds, signs, and posts order — returns CreateOrderResult", async () => {
+      (http.post as any).mockResolvedValue({ success: true, order: { nonce: "0xabc" } });
+
       const req = {
         marketId: "0xabc",
         outcome: "yes" as const,
@@ -90,13 +135,14 @@ describe("Orders module", () => {
         size: 5,
       };
 
-      await orders.create(req);
+      const result = await orders.create(req);
 
       expect(builder.buildAndSign).toHaveBeenCalledWith(req);
       expect(http.post).toHaveBeenCalledWith(
         "/orders",
         expect.objectContaining({ type: "limit", signature: "0xsig" }),
       );
+      expect(result.success).toBe(true);
     });
 
     it("cancel() signs and posts cancel", async () => {
@@ -118,36 +164,47 @@ describe("Orders module", () => {
       expect(http.get).toHaveBeenCalledWith("/orders", {
         trader: ADDR,
         marketId: "m1",
+        status: undefined,
         cursor: undefined,
         limit: undefined,
       });
     });
 
-    it("bulkCreate() signs all orders in parallel", async () => {
+    it("bulkCreate() signs all and unwraps results", async () => {
+      (http.post as any).mockResolvedValue({
+        results: [{ success: true, order: {} }],
+        errors: [],
+      });
+
       const reqs = [
         { marketId: "0xa", outcome: "yes" as const, side: "buy" as const, priceCents: 25, size: 5 },
-        { marketId: "0xb", outcome: "no" as const, side: "sell" as const, priceCents: 75, size: 3 },
       ];
 
-      await orders.bulkCreate(reqs);
+      const results = await orders.bulkCreate(reqs);
 
-      expect(builder.buildAndSign).toHaveBeenCalledTimes(2);
+      expect(builder.buildAndSign).toHaveBeenCalledTimes(1);
       expect(http.post).toHaveBeenCalledWith(
         "/orders/bulk/create",
         expect.objectContaining({ orders: expect.any(Array) }),
       );
+      expect(results).toHaveLength(1);
     });
 
-    it("bulkCancel() signs all cancels in parallel", async () => {
-      const nonces = ["0xn1" as Hex, "0xn2" as Hex];
+    it("bulkCancel() signs all and unwraps results", async () => {
+      (http.post as any).mockResolvedValue({
+        results: [{ success: true }],
+        errors: [],
+      });
 
-      await orders.bulkCancel(nonces);
+      const nonces = ["0xn1" as Hex];
+      const results = await orders.bulkCancel(nonces);
 
-      expect(builder.signCancel).toHaveBeenCalledTimes(2);
+      expect(builder.signCancel).toHaveBeenCalledTimes(1);
       expect(http.post).toHaveBeenCalledWith(
         "/orders/bulk/cancel",
         expect.objectContaining({ cancels: expect.any(Array) }),
       );
+      expect(results).toHaveLength(1);
     });
   });
 

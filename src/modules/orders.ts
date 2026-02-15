@@ -6,9 +6,15 @@ import { ContextConfigError } from "../errors.js";
 import type {
   PlaceOrderRequest,
   Order,
+  OrderList,
+  CreateOrderResult,
   CancelResult,
   CancelReplaceResult,
+  BulkResult,
   GetOrdersParams,
+  GetRecentOrdersParams,
+  OrderSimulateParams,
+  OrderSimulateResult,
 } from "../types.js";
 
 export class Orders {
@@ -38,29 +44,33 @@ export class Orders {
 
   // ─── Read ───
 
-  async list(params?: GetOrdersParams): Promise<Order[]> {
-    return this.http.get<Order[]>(ENDPOINTS.orders.list, {
+  async list(params?: GetOrdersParams): Promise<OrderList> {
+    return this.http.get<OrderList>(ENDPOINTS.orders.list, {
       trader: params?.trader,
       marketId: params?.marketId,
+      status: params?.status,
       cursor: params?.cursor,
       limit: params?.limit,
     });
   }
 
-  async listAll(params?: Omit<GetOrdersParams, "cursor">): Promise<Order[]> {
+  async listAll(
+    params?: Omit<GetOrdersParams, "cursor">,
+  ): Promise<Order[]> {
     const allOrders: Order[] = [];
     let cursor: string | undefined;
 
     do {
-      const raw: any = await this.http.get(ENDPOINTS.orders.list, {
+      const res = await this.http.get<OrderList>(ENDPOINTS.orders.list, {
         trader: params?.trader,
         marketId: params?.marketId,
+        status: params?.status,
         cursor,
       });
 
-      const orders: Order[] = Array.isArray(raw) ? raw : raw.orders ?? [];
+      const orders = res.orders ?? [];
       allOrders.push(...orders);
-      cursor = raw?.cursor ?? undefined;
+      cursor = res.cursor ?? undefined;
 
       if (orders.length === 0) break;
     } while (cursor);
@@ -68,7 +78,7 @@ export class Orders {
     return allOrders;
   }
 
-  async mine(marketId?: string): Promise<Order[]> {
+  async mine(marketId?: string): Promise<OrderList> {
     return this.list({
       trader: this.requireAddress(),
       marketId,
@@ -82,12 +92,36 @@ export class Orders {
     });
   }
 
+  async get(id: string): Promise<Order> {
+    const res = await this.http.get<{ order: Order }>(
+      ENDPOINTS.orders.get(id),
+    );
+    return res.order;
+  }
+
+  async recent(params?: GetRecentOrdersParams): Promise<OrderList> {
+    return this.http.get<OrderList>(ENDPOINTS.orders.recent, {
+      trader: params?.trader,
+      marketId: params?.marketId,
+      status: params?.status,
+      limit: params?.limit,
+      windowSeconds: params?.windowSeconds,
+    });
+  }
+
+  async simulate(params: OrderSimulateParams): Promise<OrderSimulateResult> {
+    return this.http.post<OrderSimulateResult>(
+      ENDPOINTS.orders.simulate,
+      params,
+    );
+  }
+
   // ─── Write ───
 
-  async create(req: PlaceOrderRequest): Promise<Order> {
+  async create(req: PlaceOrderRequest): Promise<CreateOrderResult> {
     const builder = this.requireSigner();
     const signed = await builder.buildAndSign(req);
-    return this.http.post<Order>(ENDPOINTS.orders.create, signed);
+    return this.http.post<CreateOrderResult>(ENDPOINTS.orders.create, signed);
   }
 
   async cancel(nonce: Hex): Promise<CancelResult> {
@@ -121,14 +155,16 @@ export class Orders {
     );
   }
 
-  async bulkCreate(orders: PlaceOrderRequest[]): Promise<Order[]> {
+  async bulkCreate(orders: PlaceOrderRequest[]): Promise<CreateOrderResult[]> {
     const builder = this.requireSigner();
     const signed = await Promise.all(
       orders.map((req) => builder.buildAndSign(req)),
     );
-    return this.http.post<Order[]>(ENDPOINTS.orders.bulkCreate, {
-      orders: signed,
-    });
+    const res = await this.http.post<{ results: CreateOrderResult[]; errors: unknown[] }>(
+      ENDPOINTS.orders.bulkCreate,
+      { orders: signed },
+    );
+    return res.results;
   }
 
   async bulkCancel(nonces: Hex[]): Promise<CancelResult[]> {
@@ -139,8 +175,39 @@ export class Orders {
         return { trader: builder.address, nonce, signature };
       }),
     );
-    return this.http.post<CancelResult[]>(ENDPOINTS.orders.bulkCancel, {
-      cancels,
+    const res = await this.http.post<{ results: CancelResult[]; errors: unknown[] }>(
+      ENDPOINTS.orders.bulkCancel,
+      { cancels },
+    );
+    return res.results;
+  }
+
+  async bulk(
+    creates: PlaceOrderRequest[],
+    cancelNonces: Hex[],
+  ): Promise<BulkResult> {
+    const builder = this.requireSigner();
+
+    const createOps = await Promise.all(
+      creates.map(async (req) => ({
+        type: "create" as const,
+        order: await builder.buildAndSign(req),
+      })),
+    );
+
+    const cancelOps = await Promise.all(
+      cancelNonces.map(async (nonce) => ({
+        type: "cancel" as const,
+        cancel: {
+          trader: builder.address,
+          nonce,
+          signature: await builder.signCancel(nonce),
+        },
+      })),
+    );
+
+    return this.http.post<BulkResult>(ENDPOINTS.orders.bulk, {
+      operations: [...createOps, ...cancelOps],
     });
   }
 }

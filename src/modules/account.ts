@@ -21,7 +21,14 @@ import {
   SETTLEMENT_ABI,
 } from "../config.js";
 import { ContextConfigError } from "../errors.js";
-import type { WalletStatus, WalletSetupResult } from "../types.js";
+import type {
+  WalletStatus,
+  WalletSetupResult,
+  GaslessOperatorRequest,
+  GaslessOperatorResult,
+  GaslessDepositRequest,
+  GaslessDepositResult,
+} from "../types.js";
 
 export class AccountModule {
   private readonly publicClient: PublicClient;
@@ -205,5 +212,25 @@ export class AccountModule {
 
     await this.publicClient.waitForTransactionReceipt({ hash });
     return hash;
+  }
+
+  // ─── Gasless Relay ───
+
+  async relayOperatorApproval(
+    req: GaslessOperatorRequest,
+  ): Promise<GaslessOperatorResult> {
+    return this.http.post<GaslessOperatorResult>(
+      ENDPOINTS.gasless.operator,
+      req,
+    );
+  }
+
+  async relayDeposit(
+    req: GaslessDepositRequest,
+  ): Promise<GaslessDepositResult> {
+    return this.http.post<GaslessDepositResult>(
+      ENDPOINTS.gasless.depositWithPermit,
+      req,
+    );
   }
 }

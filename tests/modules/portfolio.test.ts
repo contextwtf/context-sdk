@@ -25,13 +25,60 @@ describe("PortfolioModule", () => {
 
     it("get() uses default address when none provided", async () => {
       await portfolio.get();
-      expect(http.get).toHaveBeenCalledWith(`/portfolio/${ADDR}`);
+      expect(http.get).toHaveBeenCalledWith(`/portfolio/${ADDR}`, {
+        kind: undefined,
+        marketId: undefined,
+        cursor: undefined,
+        pageSize: undefined,
+      });
     });
 
     it("get() uses explicit address when provided", async () => {
       const other = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" as Address;
       await portfolio.get(other);
-      expect(http.get).toHaveBeenCalledWith(`/portfolio/${other}`);
+      expect(http.get).toHaveBeenCalledWith(`/portfolio/${other}`, {
+        kind: undefined,
+        marketId: undefined,
+        cursor: undefined,
+        pageSize: undefined,
+      });
+    });
+
+    it("get() passes params through", async () => {
+      await portfolio.get(undefined, {
+        kind: "active",
+        marketId: "m1",
+        cursor: "abc",
+        pageSize: 10,
+      });
+      expect(http.get).toHaveBeenCalledWith(`/portfolio/${ADDR}`, {
+        kind: "active",
+        marketId: "m1",
+        cursor: "abc",
+        pageSize: 10,
+      });
+    });
+
+    it("claimable() uses default address", async () => {
+      await portfolio.claimable();
+      expect(http.get).toHaveBeenCalledWith(`/portfolio/${ADDR}/claimable`);
+    });
+
+    it("claimable() uses explicit address", async () => {
+      const other = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" as Address;
+      await portfolio.claimable(other);
+      expect(http.get).toHaveBeenCalledWith(`/portfolio/${other}/claimable`);
+    });
+
+    it("stats() uses default address", async () => {
+      await portfolio.stats();
+      expect(http.get).toHaveBeenCalledWith(`/portfolio/${ADDR}/stats`);
+    });
+
+    it("stats() uses explicit address", async () => {
+      const other = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" as Address;
+      await portfolio.stats(other);
+      expect(http.get).toHaveBeenCalledWith(`/portfolio/${other}/stats`);
     });
 
     it("balance() uses default address when none provided", async () => {
@@ -43,6 +90,15 @@ describe("PortfolioModule", () => {
       const other = "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" as Address;
       await portfolio.balance(other);
       expect(http.get).toHaveBeenCalledWith(`/balance/${other}`);
+    });
+
+    it("tokenBalance() calls GET /balance with address and tokenAddress", async () => {
+      const token = "0xcccccccccccccccccccccccccccccccccccccccc" as Address;
+      await portfolio.tokenBalance(ADDR, token);
+      expect(http.get).toHaveBeenCalledWith("/balance", {
+        address: ADDR,
+        tokenAddress: token,
+      });
     });
   });
 
@@ -62,11 +118,24 @@ describe("PortfolioModule", () => {
       await expect(portfolio.balance()).rejects.toThrow("Address required");
     });
 
+    it("claimable() throws when no address provided and no default", async () => {
+      await expect(portfolio.claimable()).rejects.toThrow("Address required");
+    });
+
+    it("stats() throws when no address provided and no default", async () => {
+      await expect(portfolio.stats()).rejects.toThrow("Address required");
+    });
+
     it("get() works with explicit address even without signer", async () => {
       const http = createMockHttp();
       const p = new PortfolioModule(http, null);
       await p.get(ADDR);
-      expect(http.get).toHaveBeenCalledWith(`/portfolio/${ADDR}`);
+      expect(http.get).toHaveBeenCalledWith(`/portfolio/${ADDR}`, {
+        kind: undefined,
+        marketId: undefined,
+        cursor: undefined,
+        pageSize: undefined,
+      });
     });
   });
 });
