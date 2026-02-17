@@ -150,6 +150,23 @@ export interface Fill {
   type: "partial" | "full";
 }
 
+/**
+ * Inventory mode constraint for limit orders.
+ * - 0 (ANY): Fill can mint new tokens or use existing inventory
+ * - 1 (REQUIRE_INVENTORY): Maker must already hold the outcome tokens
+ * - 2 (REQUIRE_NO_INVENTORY): Settlement mints complete sets from maker's USDC on fill.
+ *   Use this for SELL/ASK orders when you don't hold tokens but have USDC deposited.
+ */
+export type InventoryMode = 0 | 1 | 2;
+
+/**
+ * Maker role constraint for limit orders.
+ * - 0 (ANY): No constraint
+ * - 1 (MAKER_ONLY): Order can only be a maker (no immediate fills)
+ * - 2 (TAKER_ONLY): Order can only be a taker (must fill immediately)
+ */
+export type MakerRoleConstraint = 0 | 1 | 2;
+
 export interface PlaceOrderRequest {
   marketId: string;
   outcome: "yes" | "no";
@@ -157,6 +174,10 @@ export interface PlaceOrderRequest {
   priceCents: number;
   size: number;
   expirySeconds?: number;
+  /** Default: 0 (ANY). Set to 2 for SELL orders without existing token inventory. */
+  inventoryModeConstraint?: InventoryMode;
+  /** Default: 0 (ANY). Set to 1 for maker-only, 2 for taker-only. */
+  makerRoleConstraint?: MakerRoleConstraint;
 }
 
 export interface PlaceMarketOrderRequest {

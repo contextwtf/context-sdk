@@ -62,6 +62,8 @@ export type {
   Fill,
   PlaceOrderRequest,
   PlaceMarketOrderRequest,
+  InventoryMode,
+  MakerRoleConstraint,
   CancelResult,
   CancelReplaceResult,
   OrderSimulateParams,

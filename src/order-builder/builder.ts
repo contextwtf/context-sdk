@@ -69,8 +69,8 @@ export class OrderBuilder {
       nonce,
       expiry,
       maxFee,
-      makerRoleConstraint: 0,
-      inventoryModeConstraint: 0,
+      makerRoleConstraint: req.makerRoleConstraint ?? 0,
+      inventoryModeConstraint: req.inventoryModeConstraint ?? 0,
     };
 
     const signature = await signOrder(this.walletClient, this.account, order);
