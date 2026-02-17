@@ -19,6 +19,11 @@ import {
   ERC20_ABI,
   HOLDINGS_ABI,
   SETTLEMENT_ABI,
+  HOLDINGS_EIP712_DOMAIN,
+  PERMIT2_EIP712_DOMAIN,
+  OPERATOR_APPROVAL_TYPES,
+  PERMIT_TRANSFER_FROM_TYPES,
+  OPERATOR_NONCE_ABI,
 } from "../config.js";
 import { ContextConfigError } from "../errors.js";
 import type {
@@ -37,10 +42,11 @@ export class AccountModule {
     private readonly http: HttpClient,
     private readonly walletClient: WalletClient | null,
     private readonly account: Account | null,
+    rpcUrl?: string,
   ) {
     this.publicClient = createPublicClient({
       chain: baseSepolia,
-      transport: viemHttp(),
+      transport: viemHttp(rpcUrl),
     }) as PublicClient;
   }
 
@@ -214,7 +220,78 @@ export class AccountModule {
     return hash;
   }
 
-  // ─── Gasless Relay ───
+  // ─── Gasless (high-level: sign + relay) ───
+
+  async gaslessSetup(): Promise<GaslessOperatorResult> {
+    const wallet = this.requireWallet();
+    const account = this.requireAccount();
+
+    const nonce = (await this.publicClient.readContract({
+      address: HOLDINGS_ADDRESS,
+      abi: OPERATOR_NONCE_ABI,
+      functionName: "operatorNonce",
+      args: [this.address],
+    })) as bigint;
+
+    const deadline = BigInt(Math.floor(Date.now() / 1000) + 3600);
+
+    const signature = await wallet.signTypedData({
+      account,
+      domain: HOLDINGS_EIP712_DOMAIN,
+      types: OPERATOR_APPROVAL_TYPES,
+      primaryType: "OperatorApproval",
+      message: {
+        user: this.address,
+        operator: SETTLEMENT_ADDRESS,
+        approved: true,
+        nonce,
+        deadline,
+      },
+    });
+
+    return this.relayOperatorApproval({
+      user: this.address,
+      approved: true,
+      nonce: nonce.toString(),
+      deadline: deadline.toString(),
+      signature,
+    });
+  }
+
+  async gaslessDeposit(amount: number): Promise<GaslessDepositResult> {
+    const wallet = this.requireWallet();
+    const account = this.requireAccount();
+    const amountRaw = parseUnits(amount.toString(), 6);
+
+    const nonce = BigInt(Date.now());
+    const deadline = BigInt(Math.floor(Date.now() / 1000) + 3600);
+
+    const signature = await wallet.signTypedData({
+      account,
+      domain: PERMIT2_EIP712_DOMAIN,
+      types: PERMIT_TRANSFER_FROM_TYPES,
+      primaryType: "PermitTransferFrom",
+      message: {
+        permitted: {
+          token: USDC_ADDRESS,
+          amount: amountRaw,
+        },
+        spender: HOLDINGS_ADDRESS,
+        nonce,
+        deadline,
+      },
+    });
+
+    return this.relayDeposit({
+      user: this.address,
+      amount: amountRaw.toString(),
+      nonce: nonce.toString(),
+      deadline: deadline.toString(),
+      signature,
+    });
+  }
+
+  // ─── Gasless Relay (low-level) ───
 
   async relayOperatorApproval(
     req: GaslessOperatorRequest,

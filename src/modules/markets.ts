@@ -5,6 +5,7 @@ import type {
   MarketList,
   Quotes,
   Orderbook,
+  FullOrderbook,
   SimulateTradeParams,
   SimulateResult,
   PriceHistory,
@@ -56,6 +57,22 @@ export class Markets {
       depth: params?.depth,
       outcomeIndex: params?.outcomeIndex,
     });
+  }
+
+  async fullOrderbook(
+    marketId: string,
+    params?: Omit<GetOrderbookParams, "outcomeIndex">,
+  ): Promise<FullOrderbook> {
+    const [no, yes] = await Promise.all([
+      this.orderbook(marketId, { ...params, outcomeIndex: 0 }),
+      this.orderbook(marketId, { ...params, outcomeIndex: 1 }),
+    ]);
+    return {
+      marketId: yes.marketId,
+      yes: { bids: yes.bids, asks: yes.asks },
+      no: { bids: no.bids, asks: no.asks },
+      timestamp: yes.timestamp,
+    };
   }
 
   async simulate(

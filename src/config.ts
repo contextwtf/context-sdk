@@ -44,10 +44,64 @@ export const ORDER_TYPES = {
   ],
 } as const;
 
+export const MARKET_ORDER_INTENT_TYPES = {
+  MarketOrderIntent: [
+    { name: "marketId", type: "bytes32" },
+    { name: "trader", type: "address" },
+    { name: "maxSize", type: "uint256" },
+    { name: "maxPrice", type: "uint256" },
+    { name: "outcomeIndex", type: "uint8" },
+    { name: "side", type: "uint8" },
+    { name: "nonce", type: "bytes32" },
+    { name: "expiry", type: "uint256" },
+    { name: "maxFee", type: "uint256" },
+  ],
+} as const;
+
 export const CANCEL_TYPES = {
   CancelNonce: [
     { name: "trader", type: "address" },
     { name: "nonce", type: "bytes32" },
+  ],
+} as const;
+
+// ─── EIP-712 Domains (gasless) ───
+
+export const HOLDINGS_EIP712_DOMAIN = {
+  name: "Holdings",
+  version: "1",
+  chainId: CHAIN_ID,
+  verifyingContract: HOLDINGS_ADDRESS,
+} as const;
+
+export const PERMIT2_EIP712_DOMAIN = {
+  name: "Permit2" as const,
+  chainId: CHAIN_ID,
+  verifyingContract: PERMIT2_ADDRESS,
+} as const;
+
+// ─── EIP-712 Types (gasless) ───
+
+export const OPERATOR_APPROVAL_TYPES = {
+  OperatorApproval: [
+    { name: "user", type: "address" },
+    { name: "operator", type: "address" },
+    { name: "approved", type: "bool" },
+    { name: "nonce", type: "uint256" },
+    { name: "deadline", type: "uint256" },
+  ],
+} as const;
+
+export const PERMIT_TRANSFER_FROM_TYPES = {
+  TokenPermissions: [
+    { name: "token", type: "address" },
+    { name: "amount", type: "uint256" },
+  ],
+  PermitTransferFrom: [
+    { name: "permitted", type: "TokenPermissions" },
+    { name: "spender", type: "address" },
+    { name: "nonce", type: "uint256" },
+    { name: "deadline", type: "uint256" },
   ],
 } as const;
 
@@ -151,5 +205,15 @@ export const SETTLEMENT_ABI = [
       { name: "creditInternal", type: "bool" },
     ],
     outputs: [],
+  },
+] as const;
+
+export const OPERATOR_NONCE_ABI = [
+  {
+    name: "operatorNonce",
+    type: "function",
+    stateMutability: "view",
+    inputs: [{ name: "user", type: "address" }],
+    outputs: [{ name: "", type: "uint256" }],
   },
 ] as const;

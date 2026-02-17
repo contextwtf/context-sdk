@@ -51,6 +51,6 @@ export class ContextClient {
     this.markets = new Markets(http);
     this.orders = new Orders(http, builder, address);
     this.portfolio = new PortfolioModule(http, address);
-    this.account = new AccountModule(http, walletClient, account);
+    this.account = new AccountModule(http, walletClient, account, options.rpcUrl);
   }
 }

@@ -93,6 +93,13 @@ export interface OrderbookLevel {
   [key: string]: unknown;
 }
 
+export interface FullOrderbook {
+  marketId: string;
+  yes: { bids: OrderbookLevel[]; asks: OrderbookLevel[] };
+  no: { bids: OrderbookLevel[]; asks: OrderbookLevel[] };
+  timestamp: string;
+}
+
 // ─── Order Types ───
 
 export interface Order {
@@ -149,6 +156,15 @@ export interface PlaceOrderRequest {
   side: "buy" | "sell";
   priceCents: number;
   size: number;
+  expirySeconds?: number;
+}
+
+export interface PlaceMarketOrderRequest {
+  marketId: string;
+  outcome: "yes" | "no";
+  side: "buy" | "sell";
+  maxPriceCents: number;
+  maxSize: number;
   expirySeconds?: number;
 }
 
@@ -530,6 +546,7 @@ export interface BulkResult {
 export interface ContextClientOptions {
   apiKey?: string;
   baseUrl?: string;
+  rpcUrl?: string;
   signer?: SignerInput;
 }
 

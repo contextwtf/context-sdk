@@ -13,6 +13,7 @@ import { baseSepolia } from "viem/chains";
 import {
   EIP712_DOMAIN,
   ORDER_TYPES,
+  MARKET_ORDER_INTENT_TYPES,
   CANCEL_TYPES,
 } from "../config.js";
 import { ContextSigningError } from "../errors.js";
@@ -87,6 +88,36 @@ export async function signOrder(
     });
   } catch (err) {
     throw new ContextSigningError("Failed to sign order", err);
+  }
+}
+
+export interface MarketOrderIntentMessage {
+  marketId: Hex;
+  trader: Address;
+  maxPrice: bigint;
+  maxSize: bigint;
+  outcomeIndex: number;
+  side: number;
+  nonce: Hex;
+  expiry: bigint;
+  maxFee: bigint;
+}
+
+export async function signMarketOrderIntent(
+  walletClient: WalletClient,
+  account: Account,
+  intent: MarketOrderIntentMessage,
+): Promise<Hex> {
+  try {
+    return await walletClient.signTypedData({
+      account,
+      domain: EIP712_DOMAIN,
+      types: MARKET_ORDER_INTENT_TYPES,
+      primaryType: "MarketOrderIntent",
+      message: intent,
+    });
+  } catch (err) {
+    throw new ContextSigningError("Failed to sign market order intent", err);
   }
 }
 

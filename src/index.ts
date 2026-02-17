@@ -25,6 +25,8 @@ export {
   USDC_ADDRESS,
   PERMIT2_ADDRESS,
   CHAIN_ID,
+  HOLDINGS_EIP712_DOMAIN,
+  PERMIT2_EIP712_DOMAIN,
 } from "./config.js";
 
 // Types
@@ -38,6 +40,7 @@ export type {
   QuoteSide,
   Quotes,
   Orderbook,
+  FullOrderbook,
   OrderbookLevel,
   Candle,
   PricePoint,
@@ -58,6 +61,7 @@ export type {
   CreateOrderResult,
   Fill,
   PlaceOrderRequest,
+  PlaceMarketOrderRequest,
   CancelResult,
   CancelReplaceResult,
   OrderSimulateParams,

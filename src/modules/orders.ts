@@ -5,6 +5,7 @@ import type { OrderBuilder } from "../order-builder/builder.js";
 import { ContextConfigError } from "../errors.js";
 import type {
   PlaceOrderRequest,
+  PlaceMarketOrderRequest,
   Order,
   OrderList,
   CreateOrderResult,
@@ -121,6 +122,12 @@ export class Orders {
   async create(req: PlaceOrderRequest): Promise<CreateOrderResult> {
     const builder = this.requireSigner();
     const signed = await builder.buildAndSign(req);
+    return this.http.post<CreateOrderResult>(ENDPOINTS.orders.create, signed);
+  }
+
+  async createMarket(req: PlaceMarketOrderRequest): Promise<CreateOrderResult> {
+    const builder = this.requireSigner();
+    const signed = await builder.buildAndSignMarket(req);
     return this.http.post<CreateOrderResult>(ENDPOINTS.orders.create, signed);
   }
 
