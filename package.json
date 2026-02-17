@@ -8,7 +8,7 @@
     "url": "https://github.com/contextwtf/context-sdk.git"
   },
   "publishConfig": {
-    "registry": "https://npm.pkg.github.com"
+    "access": "public"
   },
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
@@ -34,7 +34,9 @@
     "clean": "rm -rf dist",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "publish:npm": "npm publish --registry https://registry.npmjs.org",
+    "publish:github": "npm publish --registry https://npm.pkg.github.com"
   },
   "dependencies": {
     "viem": "^2.23.2"
