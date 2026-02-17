@@ -7,9 +7,9 @@ export const API_BASE = "https://api-testnet.context.markets/v2";
 // ─── Contract Addresses (Base Sepolia) ───
 
 export const SETTLEMENT_ADDRESS: Address =
-  "0xABfB9e3Dc252D59e4e4A3c3537D96F3F207C9b2c";
+  "0xCB6CBCb87fe36Dd48b08930867C8D1E5fDDeE251";
 export const HOLDINGS_ADDRESS: Address =
-  "0x769341425095155C0A0620eBC308d4C05980B84a";
+  "0x3A81C17a9bf6D5d425fbF67C4BE8aA279f8F6F95";
 export const USDC_ADDRESS: Address =
   "0xBbee2756d3169CF7065e5E9C4A5EA9b1D1Fd415e";
 export const PERMIT2_ADDRESS: Address =
@@ -149,7 +149,7 @@ export const HOLDINGS_ABI = [
       { name: "operator", type: "address" },
       { name: "approved", type: "bool" },
     ],
-    outputs: [{ name: "", type: "bool" }],
+    outputs: [],
   },
   {
     name: "isOperatorFor",

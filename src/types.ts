@@ -161,9 +161,11 @@ export type InventoryMode = 0 | 1 | 2;
 
 /**
  * Maker role constraint for limit orders.
- * - 0 (ANY): No constraint
- * - 1 (MAKER_ONLY): Order can only be a maker (no immediate fills)
- * - 2 (TAKER_ONLY): Order can only be a taker (must fill immediately)
+ * - 0 (ANY): No constraint — always use this unless you need taker-only.
+ * - 1 (MAKER_ONLY): DANGEROUS — do NOT use. When two maker-only orders cross,
+ *   Settlement reverts with InvalidRoleConstraint, poisoning the entire batch
+ *   and blocking all trading on the market.
+ * - 2 (TAKER_ONLY): Order must fill immediately or gets voided.
  */
 export type MakerRoleConstraint = 0 | 1 | 2;
 
