@@ -17,6 +17,7 @@ import type {
   GetOrderbookParams,
   GetPriceHistoryParams,
   GetActivityParams,
+  CreateMarketResult,
 } from "../types.js";
 
 export class Markets {
@@ -132,6 +133,12 @@ export class Markets {
         endTime: params?.endTime,
       },
     );
+  }
+
+  async create(questionId: string): Promise<CreateMarketResult> {
+    return this.http.post<CreateMarketResult>(ENDPOINTS.markets.create, {
+      questionId,
+    });
   }
 
   async globalActivity(params?: GetActivityParams): Promise<ActivityResponse> {

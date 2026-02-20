@@ -508,6 +508,58 @@ export interface GetPortfolioParams {
   pageSize?: number;
 }
 
+// ─── Question Submission Types ───
+
+export interface SubmitQuestionRequest {
+  question: string;
+}
+
+export interface SubmitQuestionResult {
+  submissionId: string;
+  pollUrl?: string;
+  status: string;
+  [key: string]: unknown;
+}
+
+export type QuestionSubmissionStatus =
+  | "pending"
+  | "processing"
+  | "completed"
+  | "failed";
+
+export interface GeneratedQuestion {
+  id: string;
+  text?: string;
+  criteria?: string;
+  [key: string]: unknown;
+}
+
+export interface QuestionSubmissionStatusUpdate {
+  tool: string;
+  status: string;
+  timestamp: string;
+  [key: string]: unknown;
+}
+
+export interface QuestionSubmission {
+  submissionId?: string;
+  status: QuestionSubmissionStatus;
+  questions: GeneratedQuestion[];
+  statusUpdates: QuestionSubmissionStatusUpdate[];
+  [key: string]: unknown;
+}
+
+export interface CreateMarketResult {
+  marketId: string;
+  txHash: string;
+  [key: string]: unknown;
+}
+
+export interface SubmitAndWaitOptions {
+  pollIntervalMs?: number;
+  maxAttempts?: number;
+}
+
 // ─── Gasless Types ───
 
 export interface GaslessOperatorRequest {
