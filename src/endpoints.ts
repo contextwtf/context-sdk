@@ -9,6 +9,11 @@ export const ENDPOINTS = {
     oracle: (id: string) => `/markets/${id}/oracle` as const,
     oracleQuotes: (id: string) => `/markets/${id}/oracle/quotes` as const,
     activity: (id: string) => `/markets/${id}/activity` as const,
+    create: "/markets/create",
+  },
+  questions: {
+    submit: "/questions",
+    submission: (id: string) => `/questions/submissions/${id}` as const,
   },
   orders: {
     create: "/orders",

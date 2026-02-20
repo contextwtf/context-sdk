@@ -54,6 +54,15 @@ export type {
   OracleQuoteRequestResult,
   ActivityItem,
   ActivityResponse,
+  // Questions & Market Creation
+  SubmitQuestionRequest,
+  SubmitQuestionResult,
+  QuestionSubmissionStatus,
+  GeneratedQuestion,
+  QuestionSubmissionStatusUpdate,
+  QuestionSubmission,
+  CreateMarketResult,
+  SubmitAndWaitOptions,
   // Orders
   Order,
   OrderMarkets,

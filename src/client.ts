@@ -3,6 +3,7 @@ import { createHttpClient, type HttpClient } from "./http.js";
 import { resolveSigner } from "./signing/eip712.js";
 import { OrderBuilder } from "./order-builder/builder.js";
 import { Markets } from "./modules/markets.js";
+import { Questions } from "./modules/questions.js";
 import { Orders } from "./modules/orders.js";
 import { PortfolioModule } from "./modules/portfolio.js";
 import { AccountModule } from "./modules/account.js";
@@ -21,6 +22,7 @@ import type { ContextClientOptions } from "./types.js";
  */
 export class ContextClient {
   readonly markets: Markets;
+  readonly questions: Questions;
   readonly orders: Orders;
   readonly portfolio: PortfolioModule;
   readonly account: AccountModule;
@@ -49,6 +51,7 @@ export class ContextClient {
 
     this.address = address;
     this.markets = new Markets(http);
+    this.questions = new Questions(http);
     this.orders = new Orders(http, builder, address);
     this.portfolio = new PortfolioModule(http, address);
     this.account = new AccountModule(http, walletClient, account, options.rpcUrl);
