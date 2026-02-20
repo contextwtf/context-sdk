@@ -1,8 +1,10 @@
 # Context SDK
 
+[![npm](https://img.shields.io/npm/v/@contextwtf/sdk)](https://www.npmjs.com/package/@contextwtf/sdk)
+
 TypeScript SDK for trading on [Context Markets](https://context.markets) — an AI-powered prediction market platform on Base.
 
-For the full quickstart guide, API reference, and developer docs, visit [docs.context.markets/developers](https://docs.context.markets/developers).
+For the full quickstart guide, API reference, and developer docs, visit [docs.context.markets](https://docs.context.markets).
 
 ## Install
 
