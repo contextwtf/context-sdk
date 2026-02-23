@@ -151,7 +151,7 @@ describe("Orders module", () => {
       await orders.cancel(nonce);
 
       expect(builder.signCancel).toHaveBeenCalledWith(nonce);
-      expect(http.post).toHaveBeenCalledWith("/orders/cancels", {
+      expect(http.post).toHaveBeenCalledWith("/orders/cancel", {
         trader: ADDR,
         nonce,
         signature: "0xcancelsig",

@@ -20,7 +20,7 @@ export const ENDPOINTS = {
     list: "/orders",
     recent: "/orders/recent",
     get: (id: string) => `/orders/${id}` as const,
-    cancel: "/orders/cancels",
+    cancel: "/orders/cancel",
     cancelReplace: "/orders/cancel-replace",
     simulate: "/orders/simulate",
     bulk: "/orders/bulk",
