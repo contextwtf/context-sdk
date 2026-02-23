@@ -211,6 +211,22 @@ export interface SimulateTradeParams {
   trader?: string;
 }
 
+export interface SimulateSelfTrade {
+  orderId: number;
+  nonce: string;
+  side: 0 | 1;
+  price: string;
+  remainingSize: string;
+  [key: string]: unknown;
+}
+
+export type SimulateWarning =
+  | { type: "LOW_LIQUIDITY"; [key: string]: unknown }
+  | { type: "HIGH_SLIPPAGE"; [key: string]: unknown }
+  | { type: "INSUFFICIENT_LIQUIDITY"; [key: string]: unknown }
+  | { type: "INSUFFICIENT_COLLATERAL"; [key: string]: unknown }
+  | { type: "SELF_TRADE"; selfTrades: SimulateSelfTrade[]; [key: string]: unknown };
+
 export interface SimulateResult {
   marketId: string;
   side: string;
@@ -219,6 +235,7 @@ export interface SimulateResult {
   estimatedContracts: number;
   estimatedAvgPrice: number;
   estimatedSlippage: number;
+  warnings: SimulateWarning[];
   [key: string]: unknown;
 }
 
@@ -248,7 +265,7 @@ export interface OrderSimulateResult {
     requiredForFill: string;
     isSufficient: boolean;
   };
-  warnings: string[];
+  warnings: SimulateWarning[];
 }
 
 export interface OrderSimulateLevel {

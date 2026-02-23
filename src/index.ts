@@ -81,6 +81,8 @@ export type {
   // Simulate
   SimulateTradeParams,
   SimulateResult,
+  SimulateWarning,
+  SimulateSelfTrade,
   // Portfolio
   Portfolio,
   Position,

@@ -18,9 +18,10 @@ This is a TypeScript SDK for the Context Markets prediction market API (Base Sep
 
 ### Client → Modules → HTTP
 
-`ContextClient` is the public entry point. It composes four modules, each receiving an `HttpClient` instance:
+`ContextClient` is the public entry point. It composes five modules, each receiving an `HttpClient` instance:
 
 - **`Markets`** — read-only market data (list, get, quotes, orderbook, simulate, priceHistory, oracle, activity)
+- **`Questions`** — question submission and market creation (submit, poll status via `submitAndWait`)
 - **`Orders`** — order placement and management (requires signer for writes)
 - **`PortfolioModule`** — positions and USDC balance by address
 - **`AccountModule`** — on-chain wallet operations (approve, deposit, withdraw, mint/burn)
