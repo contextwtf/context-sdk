@@ -1,98 +1,72 @@
 import type { Address, Hex } from "viem";
+import type { components } from "./generated/api-types.js";
 
-// ─── Market Types ───
+// ─── Re-exported API Types (generated from OpenAPI spec) ───
+// Run `bun run generate` to update from the spec.
 
-export interface Market {
-  id: string;
-  question: string;
-  shortQuestion: string;
-  oracle: string;
-  outcomeTokens: string[];
-  outcomePrices: OutcomePrice[];
-  creator: string;
-  creatorProfile: { username: string | null; avatarUrl: string | null } | null;
-  volume: string;
-  volume24h: string;
-  participantCount: number;
-  resolutionStatus: "none" | "pending" | "resolved";
-  status: "active" | "pending" | "resolved" | "closed";
-  createdAt: string;
-  deadline: string;
-  resolutionCriteria: string;
-  resolvedAt: string | null;
-  payoutPcts: number[] | null;
-  metadata: MarketMetadata;
-  outcome: number | null;
-  contractAddress: string | null;
-  [key: string]: unknown;
-}
+export type Market = components["schemas"]["Market"];
+export type OutcomePrice = components["schemas"]["OutcomePrice"];
+export type MarketMetadata = components["schemas"]["MarketMetadata"];
+export type MarketList = components["schemas"]["MarketList"];
 
-export interface OutcomePrice {
-  outcomeIndex: number;
-  bestBid: number | null;
-  bestAsk: number | null;
-  spread: number | null;
-  midPrice: number | null;
-  lastPrice: number | null;
-  currentPrice: number | null;
-}
+export type Quotes = components["schemas"]["Quotes"];
+/** Single side (yes/no) of a quote — { bid, ask, last }. */
+export type QuoteSide = Quotes["yes"];
 
-export interface MarketMetadata {
-  slug: string | null;
-  criteria: string;
-  startTime: number;
-  endTime: number;
-  shortSummary: string | null;
-  mediaHash: string | null;
-  sourceAccounts: {
-    platform: string;
-    userId: string;
-    username: string;
-    displayName: string | null;
-    profileImageUrl: string | null;
-  }[];
-  categories: string[] | null;
-  [key: string]: unknown;
-}
+export type Orderbook = components["schemas"]["Orderbook"];
+/** Single price level in the orderbook. */
+export type OrderbookLevel = Orderbook["bids"][number];
 
-export interface MarketList {
-  markets: Market[];
-  cursor: string | null;
-}
+export type Order = components["schemas"]["Order"];
+export type OrderMarkets = Record<string, components["schemas"]["OrderMarketInfo"]>;
+export type OrderList = components["schemas"]["OrderList"];
+export type CreateOrderResult = components["schemas"]["OrderCreated"];
+export type CancelResult = components["schemas"]["OrderCancelResult"];
+export type CancelReplaceResult = components["schemas"]["OrderCancelReplaceResult"];
+export type BulkResult = components["schemas"]["BulkOrderResult"];
 
-// ─── Quote Types ───
+export type SimulateResult = components["schemas"]["SimulateResult"];
+export type SimulateWarning = components["schemas"]["SimulateWarning"];
+export type OrderSimulateResult = components["schemas"]["OrderSimulateResult"];
+export type OrderSimulateLevel = components["schemas"]["OrderSimulateLevel"];
 
-export interface QuoteSide {
-  bid: number | null;
-  ask: number | null;
-  last: number | null;
-}
+export type PriceHistory = components["schemas"]["PriceHistory"];
+/** Single { time, price } data point. */
+export type PricePoint = PriceHistory["prices"][number];
 
-export interface Quotes {
-  marketId: string;
-  yes: QuoteSide;
-  no: QuoteSide;
-  spread: number | null;
-  timestamp: string;
-  [key: string]: unknown;
-}
+export type OracleResponse = components["schemas"]["OracleSummaryResponse"];
+/** Oracle data with evidence and summary. */
+export type OracleData = NonNullable<OracleResponse["oracle"]>;
+export type OracleQuote = components["schemas"]["OracleQuote"];
+export type OracleQuotesResponse = components["schemas"]["OracleQuoteList"];
+export type OracleQuoteRequestResult = components["schemas"]["OracleQuoteCreated"];
 
-// ─── Orderbook Types ───
+export type ActivityItem = components["schemas"]["ActivityItem"];
+export type ActivityResponse = components["schemas"]["ActivityResponse"];
 
-export interface Orderbook {
-  marketId: string;
-  bids: OrderbookLevel[];
-  asks: OrderbookLevel[];
-  timestamp: string;
-  [key: string]: unknown;
-}
+export type Portfolio = components["schemas"]["PortfolioSummary"];
+export type Position = components["schemas"]["Position"];
+export type ClaimableResponse = components["schemas"]["ClaimablePositions"];
+export type ClaimableMarket = components["schemas"]["ClaimableMarket"];
+export type ClaimablePosition = components["schemas"]["ClaimablePosition"];
+export type PortfolioStats = components["schemas"]["PortfolioStats"];
 
-export interface OrderbookLevel {
-  price: number;
-  size: number;
-  [key: string]: unknown;
-}
+export type Balance = components["schemas"]["BalanceSummary"];
+/** USDC balance breakdown (wallet + settlement). */
+export type UsdcBalance = Balance["usdc"];
+export type OutcomeTokenBalance = components["schemas"]["OutcomeTokenBalance"];
+export type TokenBalance = components["schemas"]["TokenBalance"];
 
+export type GaslessOperatorResult = components["schemas"]["GaslessOperatorResult"];
+export type GaslessDepositResult = components["schemas"]["GaslessDepositResult"];
+
+export type SubmitQuestionResult = components["schemas"]["QuestionPostResponse"];
+export type QuestionSubmission = components["schemas"]["SubmissionResponse"];
+export type CreateMarketResult = components["schemas"]["MarketCreated"];
+
+// ─── SDK-Only Types (not from API spec) ───
+
+/** SDK-composed type combining yes + no orderbooks. */
 export interface FullOrderbook {
   marketId: string;
   yes: { bids: OrderbookLevel[]; asks: OrderbookLevel[] };
@@ -100,46 +74,33 @@ export interface FullOrderbook {
   timestamp: string;
 }
 
-// ─── Order Types ───
+/** @deprecated Use PricePoint instead — API returns {time, price} not OHLCV candles. */
+export type Candle = PricePoint;
 
-export interface Order {
-  nonce: Hex;
-  marketId: string;
-  trader: Address;
-  outcomeIndex: number;
-  side: 0 | 1;
-  price: string;
-  size: string;
-  type: "limit" | "market";
-  status: "open" | "filled" | "cancelled" | "expired" | "voided";
-  insertedAt: string;
-  filledSize: string;
-  remainingSize: string;
-  percentFilled: number;
-  voidedAt: string | null;
-  voidReason:
-    | "UNFILLED_MARKET_ORDER"
-    | "UNDER_COLLATERALIZED"
-    | "MISSING_OPERATOR_APPROVAL"
-    | null;
+export type PriceTimeframe = "1h" | "6h" | "1d" | "1w" | "1M" | "all";
+
+/** @deprecated Use PriceTimeframe — API param is "timeframe" with values 1h|6h|1d|1w|1M|all. */
+export type PriceInterval = PriceTimeframe;
+
+export type QuestionSubmissionStatus =
+  | "pending"
+  | "processing"
+  | "completed"
+  | "failed";
+
+/** @deprecated Use SubmissionQuestion from generated types. */
+export interface GeneratedQuestion {
+  id: string;
+  text?: string;
+  criteria?: string;
   [key: string]: unknown;
 }
 
-/** Enriched market info returned alongside orders. Keyed by marketId. */
-export type OrderMarkets = Record<
-  string,
-  { shortQuestion: string; slug: string }
->;
-
-export interface OrderList {
-  orders: Order[];
-  markets?: OrderMarkets;
-  cursor: string | null;
-}
-
-export interface CreateOrderResult {
-  success: boolean;
-  order: Order;
+export interface QuestionSubmissionStatusUpdate {
+  tool: string;
+  status: string;
+  timestamp: string;
+  [key: string]: unknown;
 }
 
 export interface Fill {
@@ -148,6 +109,15 @@ export interface Fill {
   currentFilledSize: number;
   fillSize: number;
   type: "partial" | "full";
+}
+
+export interface SimulateSelfTrade {
+  orderId: number;
+  nonce: string;
+  side: 0 | 1;
+  price: string;
+  remainingSize: string;
+  [key: string]: unknown;
 }
 
 /**
@@ -191,52 +161,11 @@ export interface PlaceMarketOrderRequest {
   expirySeconds?: number;
 }
 
-export interface CancelResult {
-  success: boolean;
-  alreadyCancelled?: boolean;
-  [key: string]: unknown;
-}
-
-export interface CancelReplaceResult {
-  cancel: CancelResult & { trader: string; nonce: string };
-  create: CreateOrderResult;
-}
-
-// ─── Simulate Types ───
-
 export interface SimulateTradeParams {
   side: "yes" | "no";
   amount: number;
   amountType?: "usd" | "contracts";
   trader?: string;
-}
-
-export interface SimulateSelfTrade {
-  orderId: number;
-  nonce: string;
-  side: 0 | 1;
-  price: string;
-  remainingSize: string;
-  [key: string]: unknown;
-}
-
-export type SimulateWarning =
-  | { type: "LOW_LIQUIDITY"; [key: string]: unknown }
-  | { type: "HIGH_SLIPPAGE"; [key: string]: unknown }
-  | { type: "INSUFFICIENT_LIQUIDITY"; [key: string]: unknown }
-  | { type: "INSUFFICIENT_COLLATERAL"; [key: string]: unknown }
-  | { type: "SELF_TRADE"; selfTrades: SimulateSelfTrade[]; [key: string]: unknown };
-
-export interface SimulateResult {
-  marketId: string;
-  side: string;
-  amount: number;
-  amountType: string;
-  estimatedContracts: number;
-  estimatedAvgPrice: number;
-  estimatedSlippage: number;
-  warnings: SimulateWarning[];
-  [key: string]: unknown;
 }
 
 export interface OrderSimulateParams {
@@ -248,224 +177,7 @@ export interface OrderSimulateParams {
   side: "bid" | "ask";
 }
 
-export interface OrderSimulateResult {
-  levels: OrderSimulateLevel[];
-  summary: {
-    fillSize: string;
-    fillCost: string;
-    takerFee: string;
-    weightedAvgPrice: string;
-    totalLiquidityAvailable: string;
-    percentFillable: number;
-    slippageBps: number;
-  };
-  collateral: {
-    balance: string;
-    outcomeTokenBalance: string;
-    requiredForFill: string;
-    isSufficient: boolean;
-  };
-  warnings: SimulateWarning[];
-}
-
-export interface OrderSimulateLevel {
-  price: string;
-  sizeAvailable: string;
-  cumulativeSize: string;
-  takerFee: string;
-  cumulativeTakerFee: string;
-  collateralRequired: string;
-  cumulativeCollateral: string;
-  makerCount: number;
-}
-
-// ─── Price History ───
-
-export interface PricePoint {
-  time: number;
-  price: number;
-  [key: string]: unknown;
-}
-
-export interface PriceHistory {
-  prices: PricePoint[];
-  startTime: number;
-  endTime: number;
-  interval: number;
-  [key: string]: unknown;
-}
-
-/** @deprecated Use PricePoint instead — API returns {time, price} not OHLCV candles. */
-export type Candle = PricePoint;
-
-export type PriceTimeframe = "1h" | "6h" | "1d" | "1w" | "1M" | "all";
-
-/** @deprecated Use PriceTimeframe — API param is "timeframe" with values 1h|6h|1d|1w|1M|all. */
-export type PriceInterval = PriceTimeframe;
-
-// ─── Oracle Types ───
-
-export interface OracleResponse {
-  oracle: OracleData;
-}
-
-export interface OracleData {
-  lastCheckedAt: string | null;
-  confidenceLevel: string | null;
-  evidenceCollected: {
-    postsCount: number;
-    relevantPosts: string[];
-  };
-  sourcesMonitored: string[];
-  summary: {
-    decision: string;
-    shortSummary: string;
-    expandedSummary: string;
-  };
-  [key: string]: unknown;
-}
-
-export interface OracleQuote {
-  id: number;
-  status: string;
-  probability: number | null;
-  confidence: "low" | "medium" | "high" | null;
-  reasoning: string | null;
-  referenceMarketsCount: number;
-  createdAt: string;
-  completedAt: string | null;
-  [key: string]: unknown;
-}
-
-export interface OracleQuotesResponse {
-  quotes: OracleQuote[];
-}
-
-export interface OracleQuoteRequestResult {
-  id: number;
-  status: string;
-  createdAt: string;
-}
-
-// ─── Activity Types ───
-
-export interface ActivityItem {
-  type: string;
-  timestamp: string;
-  marketId?: string;
-  data?: unknown;
-  [key: string]: unknown;
-}
-
-export interface ActivityResponse {
-  marketId: string | null;
-  activity: ActivityItem[];
-  pagination?: {
-    cursor: string | null;
-    hasMore: boolean;
-  };
-}
-
-// ─── Portfolio / Balance ───
-
-export interface Portfolio {
-  portfolio: Position[];
-  marketIds: string[];
-  cursor: string | null;
-}
-
-export interface Position {
-  tokenAddress: string;
-  balance: string;
-  settlementBalance: string;
-  walletBalance: string;
-  outcomeIndex: number;
-  outcomeName: string;
-  marketId: string;
-  netInvestment: string;
-  currentValue: string;
-  tokensRedeemed: string;
-  [key: string]: unknown;
-}
-
-export interface ClaimableResponse {
-  positions: ClaimablePosition[];
-  markets: ClaimableMarket[];
-  totalClaimable: string;
-}
-
-export interface ClaimableMarket {
-  id: string;
-  outcomeTokens: string[];
-  outcomeNames: string[];
-  payoutPcts: string[];
-}
-
-export interface ClaimablePosition {
-  tokenAddress: string;
-  balance: string;
-  settlementBalance: string;
-  walletBalance: string;
-  outcomeIndex: number;
-  outcomeName: string | null;
-  marketId: string;
-  netInvestment: string;
-  claimableAmount: string;
-  [key: string]: unknown;
-}
-
-export interface PortfolioStats {
-  currentPortfolioValue: string;
-  currentPortfolioPercentChange: number;
-}
-
-export interface Balance {
-  address: Address;
-  usdc: UsdcBalance;
-  outcomeTokens: OutcomeTokenBalance[];
-  [key: string]: unknown;
-}
-
-export interface UsdcBalance {
-  tokenAddress: string;
-  balance: string;
-  settlementBalance: string;
-  walletBalance: string;
-}
-
-export interface OutcomeTokenBalance {
-  tokenAddress: string;
-  marketId: string;
-  outcomeIndex: number;
-  outcomeName: string;
-  balance: string;
-  settlementBalance: string;
-  walletBalance: string;
-  [key: string]: unknown;
-}
-
-export interface TokenBalance {
-  balance: string;
-  decimals: number;
-  symbol: string;
-}
-
-// ─── Wallet Types ───
-
-export interface WalletStatus {
-  address: Address;
-  ethBalance: bigint;
-  usdcAllowance: bigint;
-  isOperatorApproved: boolean;
-  needsApprovals: boolean;
-}
-
-export interface WalletSetupResult {
-  usdcApprovalTx: Hex | null;
-  operatorApprovalTx: Hex | null;
-}
-
-// ─── Search Params ───
+export type OrderStatus = "open" | "filled" | "cancelled" | "expired" | "voided";
 
 export interface SearchMarketsParams {
   query?: string;
@@ -480,8 +192,6 @@ export interface SearchMarketsParams {
   category?: string;
   createdAfter?: string;
 }
-
-export type OrderStatus = "open" | "filled" | "cancelled" | "expired" | "voided";
 
 export interface GetOrdersParams {
   trader?: Address;
@@ -525,51 +235,8 @@ export interface GetPortfolioParams {
   pageSize?: number;
 }
 
-// ─── Question Submission Types ───
-
 export interface SubmitQuestionRequest {
   question: string;
-}
-
-export interface SubmitQuestionResult {
-  submissionId: string;
-  pollUrl?: string;
-  status: string;
-  [key: string]: unknown;
-}
-
-export type QuestionSubmissionStatus =
-  | "pending"
-  | "processing"
-  | "completed"
-  | "failed";
-
-export interface GeneratedQuestion {
-  id: string;
-  text?: string;
-  criteria?: string;
-  [key: string]: unknown;
-}
-
-export interface QuestionSubmissionStatusUpdate {
-  tool: string;
-  status: string;
-  timestamp: string;
-  [key: string]: unknown;
-}
-
-export interface QuestionSubmission {
-  submissionId?: string;
-  status: QuestionSubmissionStatus;
-  questions: GeneratedQuestion[];
-  statusUpdates: QuestionSubmissionStatusUpdate[];
-  [key: string]: unknown;
-}
-
-export interface CreateMarketResult {
-  marketId: string;
-  txHash: string;
-  [key: string]: unknown;
 }
 
 export interface SubmitAndWaitOptions {
@@ -577,7 +244,32 @@ export interface SubmitAndWaitOptions {
   maxAttempts?: number;
 }
 
-// ─── Gasless Types ───
+export interface BulkOperation {
+  type: "create" | "cancel";
+  order?: Record<string, unknown>;
+  cancel?: { trader: string; nonce: string; signature: string };
+}
+
+// ─── Wallet Types (client-side only, not API responses) ───
+
+export interface WalletStatus {
+  address: Address;
+  ethBalance: bigint;
+  usdcAllowance: bigint;
+  isOperatorApproved: boolean;
+  needsApprovals: boolean;
+  /**
+   * Whether the wallet needs gasless setup (operator approval only).
+   * Gasless deposits use Permit2 signatures, so no USDC allowance is required.
+   * Use this instead of `needsApprovals` when your app uses gasless deposits.
+   */
+  needsGaslessSetup: boolean;
+}
+
+export interface WalletSetupResult {
+  usdcApprovalTx: Hex | null;
+  operatorApprovalTx: Hex | null;
+}
 
 export interface GaslessOperatorRequest {
   user: Address;
@@ -587,50 +279,12 @@ export interface GaslessOperatorRequest {
   signature: Hex;
 }
 
-export interface GaslessOperatorResult {
-  success: true;
-  txHash: Hex;
-  user: Address;
-  operator: Address;
-  relayer: Address;
-}
-
 export interface GaslessDepositRequest {
   user: Address;
   amount: string;
   nonce: string;
   deadline: string;
   signature: Hex;
-}
-
-export interface GaslessDepositResult {
-  success: true;
-  txHash: Hex;
-  user: Address;
-  token: Address;
-  amount: string;
-  relayer: Address;
-}
-
-// ─── Bulk Mixed Operations ───
-
-export interface BulkOperation {
-  type: "create" | "cancel";
-  order?: Record<string, unknown>;
-  cancel?: { trader: string; nonce: string; signature: string };
-}
-
-export interface BulkResult {
-  results: Array<
-    | { type: "create"; success: boolean; order: Order }
-    | {
-        type: "cancel";
-        success: boolean;
-        trader: string;
-        nonce: string;
-        alreadyCancelled: boolean;
-      }
-  >;
 }
 
 // ─── Client Options ───

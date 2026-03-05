@@ -1,6 +1,6 @@
 {
   "name": "@contextwtf/sdk",
-  "version": "0.3.4",
+  "version": "0.3.5",
   "description": "TypeScript SDK for Context prediction markets",
   "type": "module",
   "repository": {
@@ -35,6 +35,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
+    "generate": "bun scripts/generate-api.ts",
+    "generate:check": "bun run generate && git diff --exit-code src/generated/",
     "publish:npm": "npm publish --registry https://registry.npmjs.org",
     "publish:github": "npm publish --registry https://npm.pkg.github.com"
   },
@@ -42,6 +44,7 @@
     "viem": "^2.23.2"
   },
   "devDependencies": {
+    "openapi-typescript": "^7.13.0",
     "tsup": "^8.0.0",
     "typescript": "^5.5.0",
     "vitest": "^3.0.0"

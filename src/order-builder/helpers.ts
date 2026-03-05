@@ -9,7 +9,7 @@ import {
  * Example: 25 cents -> 250_000n
  */
 export function encodePriceCents(priceCents: number): bigint {
-  if (priceCents < 1 || priceCents > 99) {
+  if (!Number.isFinite(priceCents) || priceCents < 1 || priceCents > 99) {
     throw new RangeError(`priceCents must be 1-99, got ${priceCents}`);
   }
   return BigInt(Math.round(priceCents * Number(PRICE_MULTIPLIER)));
@@ -20,7 +20,7 @@ export function encodePriceCents(priceCents: number): bigint {
  * Example: 10 shares -> 10_000_000n
  */
 export function encodeSize(size: number): bigint {
-  if (size < 0.01) {
+  if (!Number.isFinite(size) || size < 0.01) {
     throw new RangeError(`size must be >= 0.01, got ${size}`);
   }
   return BigInt(Math.round(size * Number(SIZE_MULTIPLIER)));

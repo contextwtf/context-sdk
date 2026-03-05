@@ -55,7 +55,7 @@ function expectArrayOf(arr: unknown, label: string) {
 // ─── Tests ───
 
 describe("API Validation: Read-only endpoints (no auth)", () => {
-  const ctx = new ContextClient();
+  const ctx = new ContextClient({ baseUrl: process.env.CONTEXT_BASE_URL });
   let marketId: string;
 
   describe("ctx.markets", () => {
@@ -180,8 +180,11 @@ describe("API Validation: Read-only endpoints (no auth)", () => {
     it("oracle(id) → OracleResponse { oracle }", async () => {
       const result = await ctx.markets.oracle(marketId);
       expectKeys(result, ["oracle"], "OracleResponse");
-      expect(typeof result.oracle).toBe("object");
-      expectKeys(result.oracle, ["lastCheckedAt"], "OracleData");
+      // oracle can be null if no oracle has run yet
+      if (result.oracle !== null) {
+        expect(typeof result.oracle).toBe("object");
+        expectKeys(result.oracle, ["lastCheckedAt"], "OracleData");
+      }
     });
 
     it("oracleQuotes(id) → OracleQuotesResponse { quotes }", async () => {
@@ -250,6 +253,7 @@ describe("API Validation: Authenticated endpoints", () => {
     }
     ctx = new ContextClient({
       apiKey: API_KEY,
+      baseUrl: process.env.CONTEXT_BASE_URL,
       signer: { privateKey: PRIVATE_KEY },
     });
 

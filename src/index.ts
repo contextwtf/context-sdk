@@ -118,3 +118,13 @@ export type {
   ContextClientOptions,
   SignerInput,
 } from "./types.js";
+
+// Generated OpenAPI spec types (for power users / openapi-fetch integration)
+export type {
+  paths as ApiPaths,
+  operations as ApiOperations,
+  components as ApiComponents,
+} from "./generated/api-types.js";
+
+// Generated endpoint registry
+export { ENDPOINTS } from "./generated/endpoints.js";

@@ -102,6 +102,7 @@ export class AccountModule {
       usdcAllowance,
       isOperatorApproved,
       needsApprovals: usdcAllowance === 0n || !isOperatorApproved,
+      needsGaslessSetup: !isOperatorApproved,
     };
   }
 

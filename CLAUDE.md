@@ -8,37 +8,73 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 bun install              # Install dependencies
 bun run build            # Build ESM + CJS + types via tsup
 bun run typecheck        # Type check without emitting
-bun run test             # Run all tests (vitest)
+bun run test             # Run unit tests (vitest)
 bun run test -- tests/modules/markets.test.ts  # Run a single test file
+bun run generate         # Regenerate types + endpoints from OpenAPI spec
+bun run generate:check   # Regenerate and verify no drift (for CI)
 ```
+
+### API Validation Tests
+
+The `tests/api-validation.test.ts` file hits a live API. It needs env vars:
+
+```bash
+CONTEXT_API_KEY=ctx_pk_... CONTEXT_BASE_URL=http://localhost:3001/public/v2 bun run test -- tests/api-validation.test.ts
+```
+
+Unit tests (all other test files) use mocked HTTP — no network calls needed.
 
 ## Architecture
 
-This is a TypeScript SDK for the Context Markets prediction market API (Base Sepolia testnet). Single dependency: `viem`.
+TypeScript SDK for the Context Markets prediction market API. Single runtime dependency: `viem`.
 
 ### Client → Modules → HTTP
 
-`ContextClient` is the public entry point. It composes five modules, each receiving an `HttpClient` instance:
+`ContextClient` (`src/client.ts`) is the public entry point. It composes five modules, each receiving an `HttpClient` instance:
 
-- **`Markets`** — read-only market data (list, get, quotes, orderbook, simulate, priceHistory, oracle, activity)
-- **`Questions`** — question submission and market creation (submit, poll status via `submitAndWait`)
-- **`Orders`** — order placement and management (requires signer for writes)
-- **`PortfolioModule`** — positions and USDC balance by address
-- **`AccountModule`** — on-chain wallet operations (approve, deposit, withdraw, mint/burn)
+- **`Markets`** (`src/modules/markets.ts`) — read-only market data (list, get, quotes, orderbook, simulate, priceHistory, oracle, oracleQuotes, activity, create, globalActivity)
+- **`Questions`** (`src/modules/questions.ts`) — question submission and market creation (submit, getSubmission, submitAndWait)
+- **`Orders`** (`src/modules/orders.ts`) — order placement and management (requires signer for writes: create, createMarket, cancel, cancelReplace, bulkCreate, bulkCancel, bulk; reads: list, listAll, mine, allMine, get, recent, simulate)
+- **`PortfolioModule`** (`src/modules/portfolio.ts`) — positions and USDC balance by address (get, claimable, stats, balance, tokenBalance)
+- **`AccountModule`** (`src/modules/account.ts`) — on-chain wallet operations (status, setup, mintTestUsdc, deposit, withdraw, mintCompleteSets, burnCompleteSets, gaslessSetup, gaslessDeposit, relayOperatorApproval, relayDeposit)
 
 `HttpClient` (`src/http.ts`) is a thin fetch wrapper that prepends `API_BASE`, serializes query params, attaches Bearer auth, and throws `ContextApiError` on non-OK responses.
+
+### OpenAPI Code Generation
+
+Types and endpoints are auto-generated from the OpenAPI spec:
+
+- **`scripts/generate-api.ts`** — fetches the spec, generates `src/generated/api-types.ts` (TypeScript types from schemas) and `src/generated/endpoints.ts` (ENDPOINTS constant from paths)
+- **`src/generated/api-types.ts`** — raw types from `openapi-typescript`. DO NOT EDIT manually.
+- **`src/generated/endpoints.ts`** — ENDPOINTS constant grouped by path prefix. DO NOT EDIT manually.
+- **`src/types.ts`** — re-exports API types as `components["schemas"]["..."]` aliases, plus SDK-only types (PlaceOrderRequest, SignerInput, etc.)
+- **`src/endpoints.ts`** — re-export shim from `./generated/endpoints.js`
+
+To regenerate: `bun run generate` (uses production spec URL) or `bun scripts/generate-api.ts http://localhost:3001/public/v2/openapi.json` (local).
+
+### Type Strategy
+
+API response types in `src/types.ts` are aliases to generated schemas:
+```typescript
+export type Market = components["schemas"]["Market"];
+export type OrderList = components["schemas"]["OrderList"];
+```
+
+SDK-only types (not from the API) stay handwritten in `src/types.ts`:
+- Client config: `ContextClientOptions`, `SignerInput`
+- Order builder inputs: `PlaceOrderRequest`, `PlaceMarketOrderRequest`
+- On-chain enums: `InventoryMode`, `MakerRoleConstraint`
+- Query params: `SearchMarketsParams`, `GetOrdersParams`, etc.
+- Wallet types: `WalletStatus`, `WalletSetupResult`
+- SDK-composed: `FullOrderbook`
 
 ### Order Signing Pipeline
 
 Write operations follow: `PlaceOrderRequest` → `OrderBuilder.buildAndSign()` → `SignedOrder` → POST to API.
 
-`OrderBuilder` encodes human-friendly values (cents, shares) to on-chain BigInt representations using helpers in `src/order-builder/helpers.ts`, then signs via EIP-712 (`src/signing/eip712.ts`). The EIP-712 domain targets the Settlement contract on Base Sepolia (chain 84532).
+`OrderBuilder` (`src/order-builder/builder.ts`) encodes human-friendly values (cents, shares) to on-chain BigInt representations using helpers in `src/order-builder/helpers.ts`, then signs via EIP-712 (`src/signing/eip712.ts`). The EIP-712 domain targets the Settlement contract on Base Sepolia (chain 84532).
 
 Key encoding: prices are cents × 10,000; sizes are shares × 1,000,000; outcomes map "yes"→1, "no"→0; sides map "buy"→0, "sell"→1.
-
-### Endpoint Registry
-
-All API paths are centralized in `src/endpoints.ts` — modules reference these constants rather than hardcoding paths.
 
 ### Signer Resolution
 
@@ -46,10 +82,14 @@ All API paths are centralized in `src/endpoints.ts` — modules reference these 
 
 ## Testing
 
-Tests use vitest with mock `HttpClient` instances — no network calls. Each module test verifies the correct endpoint path and params are passed to the mock. The `order-builder/helpers.test.ts` tests encoding roundtrips.
+Unit tests use vitest with mock `HttpClient` instances — no network calls. Each module test verifies the correct endpoint path and params are passed to the mock. The `order-builder/helpers.test.ts` tests encoding roundtrips.
+
+API validation tests (`tests/api-validation.test.ts`) hit a live API and verify response shapes match SDK types. These require `CONTEXT_API_KEY` and optionally `CONTEXT_BASE_URL`.
 
 ## Key Conventions
 
-- All SDK types use index signatures (`[key: string]: unknown`) for forward compatibility with API changes
-- The SDK never reads environment variables — `apiKey` and `signer` are passed programmatically via `ContextClientOptions`
+- API response types are generated from the OpenAPI spec — run `bun run generate` after spec changes
+- SDK-only types (client config, order inputs, query params) are handwritten in `src/types.ts`
+- The SDK never reads environment variables — `apiKey`, `baseUrl`, and `signer` are passed programmatically via `ContextClientOptions`
 - Dual-format output: ESM (`dist/index.js`) + CJS (`dist/index.cjs`) + declaration files
+- Endpoint registry is auto-generated and re-exported — don't edit `src/generated/` files directly

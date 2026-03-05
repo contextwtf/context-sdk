@@ -5,3 +5,4 @@ dist/
 .env
 .env.*
 .mm-state.json
+docs/
