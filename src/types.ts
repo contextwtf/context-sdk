@@ -179,6 +179,17 @@ export interface OrderSimulateParams {
 
 export type OrderStatus = "open" | "filled" | "cancelled" | "expired" | "voided";
 
+export interface MarketSearchParams {
+  q: string;
+  limit?: number;
+  offset?: number;
+}
+
+export interface MarketSearchResult {
+  markets: Market[];
+  hasMore: boolean;
+}
+
 export interface SearchMarketsParams {
   query?: string;
   status?: "active" | "pending" | "resolved" | "closed";

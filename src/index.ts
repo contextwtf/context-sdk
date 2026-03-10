@@ -36,6 +36,8 @@ export type {
   OutcomePrice,
   MarketMetadata,
   MarketList,
+  MarketSearchParams,
+  MarketSearchResult,
   // Data
   QuoteSide,
   Quotes,
