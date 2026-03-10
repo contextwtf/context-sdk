@@ -9,6 +9,7 @@ export const ENDPOINTS = {
   },
   markets: {
     list: "/markets",
+    search: "/markets/search",
     create: "/markets/create",
     get: (id: string) => `/markets/${id}` as const,
     activity: (id: string) => `/markets/${id}/activity` as const,

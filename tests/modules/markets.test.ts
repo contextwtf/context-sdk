@@ -69,6 +69,32 @@ describe("Markets module", () => {
     });
   });
 
+  it("search() calls GET /markets/search with params", async () => {
+    const mockResult = { markets: [], hasMore: false };
+    (http.get as any).mockResolvedValue(mockResult);
+
+    const result = await markets.search({ q: "bitcoin", limit: 10, offset: 5 });
+
+    expect(http.get).toHaveBeenCalledWith("/markets/search", {
+      q: "bitcoin",
+      limit: 10,
+      offset: 5,
+    });
+    expect(result).toEqual(mockResult);
+  });
+
+  it("search() works with only required q param", async () => {
+    (http.get as any).mockResolvedValue({ markets: [], hasMore: false });
+
+    await markets.search({ q: "eth" });
+
+    expect(http.get).toHaveBeenCalledWith("/markets/search", {
+      q: "eth",
+      limit: undefined,
+      offset: undefined,
+    });
+  });
+
   it("get() calls GET /markets/:id and unwraps { market }", async () => {
     const mockMarket = { id: "market-123", question: "Will X?" };
     (http.get as any).mockResolvedValue({ market: mockMarket });

@@ -14,6 +14,8 @@ import type {
   OracleQuoteRequestResult,
   ActivityResponse,
   SearchMarketsParams,
+  MarketSearchParams,
+  MarketSearchResult,
   GetOrderbookParams,
   GetPriceHistoryParams,
   GetActivityParams,
@@ -36,6 +38,14 @@ export class Markets {
       creator: params?.creator,
       category: params?.category,
       createdAfter: params?.createdAfter,
+    });
+  }
+
+  async search(params: MarketSearchParams): Promise<MarketSearchResult> {
+    return this.http.get<MarketSearchResult>(ENDPOINTS.markets.search, {
+      q: params.q,
+      limit: params.limit,
+      offset: params.offset,
     });
   }
 
