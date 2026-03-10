@@ -746,7 +746,8 @@ export interface components {
             spread: number | null;
             midPrice: number | null;
             lastPrice: number | null;
-            currentPrice: number | null;
+            sellPrice: number | null;
+            buyPrice: number | null;
         };
         MarketMetadata: {
             /**
@@ -1273,7 +1274,7 @@ export interface components {
              * @description Integer encoded as decimal string
              * @example 1000000
              */
-            currentPrice: string;
+            price: string;
             /** @enum {string} */
             status: "open" | "closed";
         };
