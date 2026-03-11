@@ -1,6 +1,6 @@
 {
   "name": "@contextwtf/sdk",
-  "version": "0.3.9",
+  "version": "0.4.0",
   "description": "TypeScript SDK for Context prediction markets",
   "type": "module",
   "repository": {

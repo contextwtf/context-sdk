@@ -32,10 +32,10 @@ TypeScript SDK for the Context Markets prediction market API. Single runtime dep
 
 `ContextClient` (`src/client.ts`) is the public entry point. It composes five modules, each receiving an `HttpClient` instance:
 
-- **`Markets`** (`src/modules/markets.ts`) — read-only market data (list, get, quotes, orderbook, simulate, priceHistory, oracle, oracleQuotes, activity, create, globalActivity)
-- **`Questions`** (`src/modules/questions.ts`) — question submission and market creation (submit, getSubmission, submitAndWait)
+- **`Markets`** (`src/modules/markets.ts`) — read-only market data (list, get, quotes, orderbook, simulate, priceHistory, oracle, oracleQuotes, latestOracleQuote, activity, create, globalActivity)
+- **`Questions`** (`src/modules/questions.ts`) — question submission and market creation (submit, getSubmission, submitAndWait, agentSubmit, agentSubmitAndWait)
 - **`Orders`** (`src/modules/orders.ts`) — order placement and management (requires signer for writes: create, createMarket, cancel, cancelReplace, bulkCreate, bulkCancel, bulk; reads: list, listAll, mine, allMine, get, recent, simulate)
-- **`PortfolioModule`** (`src/modules/portfolio.ts`) — positions and USDC balance by address (get, claimable, stats, balance, tokenBalance)
+- **`PortfolioModule`** (`src/modules/portfolio.ts`) — positions and USDC balance by address (get, positions, claimable, stats, balance, tokenBalance, settlementBalance)
 - **`AccountModule`** (`src/modules/account.ts`) — on-chain wallet operations (status, setup, mintTestUsdc, deposit, withdraw, mintCompleteSets, burnCompleteSets, gaslessSetup, gaslessDeposit, relayOperatorApproval, relayDeposit)
 
 `HttpClient` (`src/http.ts`) is a thin fetch wrapper that prepends `API_BASE`, serializes query params, attaches Bearer auth, and throws `ContextApiError` on non-OK responses.
