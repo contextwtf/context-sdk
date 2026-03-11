@@ -54,6 +54,7 @@ export type {
   OracleQuote,
   OracleQuotesResponse,
   OracleQuoteRequestResult,
+  OracleQuoteLatest,
   ActivityItem,
   ActivityResponse,
   // Questions & Market Creation
@@ -65,6 +66,9 @@ export type {
   QuestionSubmission,
   CreateMarketResult,
   SubmitAndWaitOptions,
+  AgentSubmitMarketDraft,
+  AgentSubmitComparison,
+  Bucket,
   // Orders
   Order,
   OrderMarkets,
@@ -88,6 +92,8 @@ export type {
   // Portfolio
   Portfolio,
   Position,
+  PositionList,
+  PortfolioPosition,
   ClaimableResponse,
   ClaimableMarket,
   ClaimablePosition,
@@ -96,6 +102,7 @@ export type {
   UsdcBalance,
   OutcomeTokenBalance,
   TokenBalance,
+  SettlementBalance,
   // Wallet
   WalletStatus,
   WalletSetupResult,
@@ -116,6 +123,7 @@ export type {
   GetPriceHistoryParams,
   GetActivityParams,
   GetPortfolioParams,
+  GetPositionsParams,
   // Config
   ContextClientOptions,
   SignerInput,

@@ -12,6 +12,7 @@ import type {
   OracleResponse,
   OracleQuotesResponse,
   OracleQuoteRequestResult,
+  OracleQuoteLatest,
   ActivityResponse,
   SearchMarketsParams,
   MarketSearchParams,
@@ -117,6 +118,12 @@ export class Markets {
   async oracleQuotes(marketId: string): Promise<OracleQuotesResponse> {
     return this.http.get<OracleQuotesResponse>(
       ENDPOINTS.markets.oracleQuotes(marketId),
+    );
+  }
+
+  async latestOracleQuote(marketId: string): Promise<OracleQuoteLatest> {
+    return this.http.get<OracleQuoteLatest>(
+      ENDPOINTS.markets.oracleQuotesLatest(marketId),
     );
   }
 

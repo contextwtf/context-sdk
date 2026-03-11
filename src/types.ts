@@ -40,12 +40,15 @@ export type OracleData = NonNullable<OracleResponse["oracle"]>;
 export type OracleQuote = components["schemas"]["OracleQuote"];
 export type OracleQuotesResponse = components["schemas"]["OracleQuoteList"];
 export type OracleQuoteRequestResult = components["schemas"]["OracleQuoteCreated"];
+export type OracleQuoteLatest = components["schemas"]["OracleQuoteLatest"];
 
 export type ActivityItem = components["schemas"]["ActivityItem"];
 export type ActivityResponse = components["schemas"]["ActivityResponse"];
 
 export type Portfolio = components["schemas"]["PortfolioSummary"];
 export type Position = components["schemas"]["Position"];
+export type PositionList = components["schemas"]["PositionList"];
+export type PortfolioPosition = components["schemas"]["PortfolioPosition"];
 export type ClaimableResponse = components["schemas"]["ClaimablePositions"];
 export type ClaimableMarket = components["schemas"]["ClaimableMarket"];
 export type ClaimablePosition = components["schemas"]["ClaimablePosition"];
@@ -56,6 +59,7 @@ export type Balance = components["schemas"]["BalanceSummary"];
 export type UsdcBalance = Balance["usdc"];
 export type OutcomeTokenBalance = components["schemas"]["OutcomeTokenBalance"];
 export type TokenBalance = components["schemas"]["TokenBalance"];
+export type SettlementBalance = components["schemas"]["SettlementBalance"];
 
 export type GaslessOperatorResult = components["schemas"]["GaslessOperatorResult"];
 export type GaslessDepositResult = components["schemas"]["GaslessDepositResult"];
@@ -63,6 +67,69 @@ export type GaslessDepositResult = components["schemas"]["GaslessDepositResult"]
 export type SubmitQuestionResult = components["schemas"]["QuestionPostResponse"];
 export type QuestionSubmission = components["schemas"]["SubmissionResponse"];
 export type CreateMarketResult = components["schemas"]["MarketCreated"];
+export type Bucket = components["schemas"]["Bucket"];
+
+// ─── Agent Submit Types (from OpenAPI spec) ───
+
+/** Request body for questions.agentSubmit() — POST /questions/agent-submit */
+export interface AgentSubmitMarketDraft {
+  market: {
+    formattedQuestion: string;
+    shortQuestion: string;
+    marketType: "SUBJECTIVE" | "OBJECTIVE";
+    evidenceMode: "social_only" | "web_enabled";
+    resolutionCriteria: string;
+    /** End time as "YYYY-MM-DD HH:MM:SS" interpreted in the given timezone */
+    endTime: string;
+    /** IANA timezone identifier. @default "America/New_York" */
+    timezone?: string;
+    /** @default [] */
+    sources?: string[];
+    buckets?: Bucket[];
+    comparisons?: AgentSubmitComparison[];
+    /** Max 120 characters */
+    explanation?: string;
+  };
+}
+
+export type AgentSubmitComparison =
+  | {
+      type: "binary";
+      key: string;
+      label: string;
+      aKey: string;
+      bKey: string;
+      /** @default ">" */
+      operator?: ">" | ">=" | "==" | "<=" | "<";
+      aWeight?: number;
+      bWeight?: number;
+      margin?: number;
+    }
+  | {
+      type: "max" | "min";
+      key: string;
+      label: string;
+      bucketKeys: string[];
+    }
+  | {
+      type: "before";
+      key: string;
+      label: string;
+      aKey: string;
+      bKey: string;
+      /** @default "firstEvent" */
+      event?: "firstEvent" | "targetReached";
+      /** @default true */
+      requireBoth?: boolean;
+    }
+  | {
+      type: "first";
+      key: string;
+      label: string;
+      bucketKeys: string[];
+      /** @default "firstEvent" */
+      event?: "firstEvent" | "targetReached";
+    };
 
 // ─── SDK-Only Types (not from API spec) ───
 
@@ -244,6 +311,14 @@ export interface GetPortfolioParams {
   marketId?: string;
   cursor?: string;
   pageSize?: number;
+}
+
+export interface GetPositionsParams {
+  marketId?: string;
+  status?: "open" | "closed";
+  search?: string;
+  cursor?: string;
+  limit?: number;
 }
 
 export interface SubmitQuestionRequest {

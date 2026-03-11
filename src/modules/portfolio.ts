@@ -6,8 +6,11 @@ import type {
   Balance,
   ClaimableResponse,
   PortfolioStats,
+  PositionList,
   TokenBalance,
+  SettlementBalance,
   GetPortfolioParams,
+  GetPositionsParams,
 } from "../types.js";
 
 export class PortfolioModule {
@@ -41,6 +44,22 @@ export class PortfolioModule {
     );
   }
 
+  async positions(
+    address?: Address,
+    params?: GetPositionsParams,
+  ): Promise<PositionList> {
+    return this.http.get<PositionList>(
+      ENDPOINTS.portfolio.positions(this.resolveAddress(address)),
+      {
+        marketId: params?.marketId,
+        status: params?.status,
+        search: params?.search,
+        cursor: params?.cursor,
+        limit: params?.limit,
+      },
+    );
+  }
+
   async claimable(address?: Address): Promise<ClaimableResponse> {
     return this.http.get<ClaimableResponse>(
       ENDPOINTS.portfolio.claimable(this.resolveAddress(address)),
@@ -64,6 +83,16 @@ export class PortfolioModule {
     tokenAddress: Address,
   ): Promise<TokenBalance> {
     return this.http.get<TokenBalance>(ENDPOINTS.balance.tokenBalance, {
+      address,
+      tokenAddress,
+    });
+  }
+
+  async settlementBalance(
+    address: Address,
+    tokenAddress: Address,
+  ): Promise<SettlementBalance> {
+    return this.http.get<SettlementBalance>(ENDPOINTS.balance.settlement, {
       address,
       tokenAddress,
     });
