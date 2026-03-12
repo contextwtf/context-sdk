@@ -6,3 +6,6 @@ dist/
 .env.*
 .mm-state.json
 docs/
+skills/
+CLAUDE.md
+.conductor/

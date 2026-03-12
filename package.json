@@ -12,6 +12,7 @@
   },
   "license": "MIT",
   "author": "Context",
+  "keywords": ["prediction-markets", "context", "sdk", "typescript", "base", "trading", "web3", "blockchain"],
   "type": "module",
   "exports": {
     ".": {

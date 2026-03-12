@@ -1,15 +1,24 @@
-# Context SDK
+<p align="center">
+  <img src="https://mainnet.contextcdn.com/ced823d63df9dff0390d9ad0a4e1ad3905dd199a6c50758c18a5c92a203adbd7" alt="Context" width="100%" />
+</p>
 
-[![npm](https://img.shields.io/npm/v/context-markets)](https://www.npmjs.com/package/context-markets)
+<h1 align="center">Context SDK</h1>
+<p align="center">TypeScript SDK for trading on <a href="https://context.markets">Context Markets</a> — an AI-powered prediction market platform on Base.</p>
 
-TypeScript SDK for trading on [Context Markets](https://context.markets) — an AI-powered prediction market platform on Base.
-
-For the full quickstart guide, API reference, and developer docs, visit [docs.context.markets](https://docs.context.markets).
+<p align="center">
+  <a href="https://www.npmjs.com/package/context-markets"><img src="https://img.shields.io/npm/v/context-markets" alt="npm" /></a>
+  <a href="https://github.com/contextwtf/context-sdk/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="License: MIT" /></a>
+  <a href="https://discord.gg/RVmzZsAyM4"><img src="https://img.shields.io/badge/Discord-Join-7289da" alt="Discord" /></a>
+</p>
 
 ## Install
 
 ```bash
 npm install context-markets
+# or
+yarn add context-markets
+# or
+pnpm add context-markets
 ```
 
 ## Quick Start
@@ -252,3 +261,22 @@ bun run generate     # Regenerate from OpenAPI spec
 ```
 
 Requires Node 18+.
+
+## Documentation
+
+For the full quickstart guide, API reference, and developer docs, visit **[docs.context.markets](https://docs.context.markets/agents/typescript-sdk)**.
+
+## Ecosystem
+
+| Package | Description |
+|---------|-------------|
+| **[context-markets](https://github.com/contextwtf/context-sdk)** | TypeScript SDK for trading |
+| **[@contextwtf/react](https://github.com/contextwtf/context-react)** | React hooks for market data and trading |
+| **[@contextwtf/mcp](https://github.com/contextwtf/context-mcp)** | MCP server for AI agents |
+| **[@contextwtf/cli](https://github.com/contextwtf/context-cli)** | CLI for trading from the terminal |
+| **[context-skills](https://github.com/contextwtf/context-skills)** | AI agent skill files |
+| **[context-plugin](https://github.com/contextwtf/context-plugin)** | Claude Code plugin |
+
+## License
+
+MIT — see [LICENSE](./LICENSE) for details.
