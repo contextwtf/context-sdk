@@ -17,7 +17,18 @@ export {
   decodeSize,
 } from "./order-builder/helpers.js";
 
-// Chain config (for power users)
+// Chain config
+export type { ChainConfig, ChainOption } from "./config.js";
+export {
+  MAINNET_CONFIG,
+  TESTNET_CONFIG,
+  resolveChainConfig,
+  settlementDomain,
+  holdingsDomain,
+  permit2Domain,
+} from "./config.js";
+
+// Legacy chain config (deprecated — use ChainConfig presets)
 export {
   API_BASE,
   SETTLEMENT_ADDRESS,

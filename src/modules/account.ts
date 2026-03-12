@@ -9,18 +9,15 @@ import {
   maxUint256,
   parseUnits,
 } from "viem";
-import { baseSepolia } from "viem/chains";
 import type { HttpClient } from "../http.js";
 import { ENDPOINTS } from "../endpoints.js";
 import {
-  SETTLEMENT_ADDRESS,
-  HOLDINGS_ADDRESS,
-  USDC_ADDRESS,
+  type ChainConfig,
+  holdingsDomain,
+  permit2Domain,
   ERC20_ABI,
   HOLDINGS_ABI,
   SETTLEMENT_ABI,
-  HOLDINGS_EIP712_DOMAIN,
-  PERMIT2_EIP712_DOMAIN,
   OPERATOR_APPROVAL_TYPES,
   PERMIT_TRANSFER_FROM_TYPES,
   OPERATOR_NONCE_ABI,
@@ -42,10 +39,11 @@ export class AccountModule {
     private readonly http: HttpClient,
     private readonly walletClient: WalletClient | null,
     private readonly account: Account | null,
+    private readonly chainConfig: ChainConfig,
     rpcUrl?: string,
   ) {
     this.publicClient = createPublicClient({
-      chain: baseSepolia,
+      chain: chainConfig.viemChain,
       transport: viemHttp(rpcUrl),
     }) as PublicClient;
   }
@@ -79,20 +77,21 @@ export class AccountModule {
 
   async status(): Promise<WalletStatus> {
     const addr = this.address;
+    const { settlement, holdings, usdc } = this.chainConfig;
     const [ethBalance, usdcAllowance, isOperatorApproved] =
       await Promise.all([
         this.publicClient.getBalance({ address: addr }),
         this.publicClient.readContract({
-          address: USDC_ADDRESS,
+          address: usdc,
           abi: ERC20_ABI,
           functionName: "allowance",
-          args: [addr, HOLDINGS_ADDRESS],
+          args: [addr, holdings],
         }),
         this.publicClient.readContract({
-          address: HOLDINGS_ADDRESS,
+          address: holdings,
           abi: HOLDINGS_ABI,
           functionName: "isOperatorFor",
-          args: [addr, SETTLEMENT_ADDRESS],
+          args: [addr, settlement],
         }),
       ]);
 
@@ -109,6 +108,7 @@ export class AccountModule {
   async setup(): Promise<WalletSetupResult> {
     const wallet = this.requireWallet();
     const account = this.requireAccount();
+    const { viemChain, settlement, holdings, usdc } = this.chainConfig;
     const walletStatus = await this.status();
     let usdcApprovalTx: Hex | null = null;
     let operatorApprovalTx: Hex | null = null;
@@ -116,22 +116,22 @@ export class AccountModule {
     if (walletStatus.usdcAllowance === 0n) {
       usdcApprovalTx = await wallet.writeContract({
         account,
-        chain: baseSepolia,
-        address: USDC_ADDRESS,
+        chain: viemChain,
+        address: usdc,
         abi: ERC20_ABI,
         functionName: "approve",
-        args: [HOLDINGS_ADDRESS, maxUint256],
+        args: [holdings, maxUint256],
       });
     }
 
     if (!walletStatus.isOperatorApproved) {
       operatorApprovalTx = await wallet.writeContract({
         account,
-        chain: baseSepolia,
-        address: HOLDINGS_ADDRESS,
+        chain: viemChain,
+        address: holdings,
         abi: HOLDINGS_ABI,
         functionName: "setOperator",
-        args: [SETTLEMENT_ADDRESS, true],
+        args: [settlement, true],
       });
     }
 
@@ -148,15 +148,16 @@ export class AccountModule {
   async deposit(amount: number): Promise<Hex> {
     const wallet = this.requireWallet();
     const account = this.requireAccount();
+    const { viemChain, holdings, usdc } = this.chainConfig;
     const amountRaw = parseUnits(amount.toString(), 6);
 
     const hash = await wallet.writeContract({
       account,
-      chain: baseSepolia,
-      address: HOLDINGS_ADDRESS,
+      chain: viemChain,
+      address: holdings,
       abi: HOLDINGS_ABI,
       functionName: "deposit",
-      args: [USDC_ADDRESS, amountRaw],
+      args: [usdc, amountRaw],
     });
 
     await this.publicClient.waitForTransactionReceipt({ hash });
@@ -166,15 +167,16 @@ export class AccountModule {
   async withdraw(amount: number): Promise<Hex> {
     const wallet = this.requireWallet();
     const account = this.requireAccount();
+    const { viemChain, holdings, usdc } = this.chainConfig;
     const amountRaw = parseUnits(amount.toString(), 6);
 
     const hash = await wallet.writeContract({
       account,
-      chain: baseSepolia,
-      address: HOLDINGS_ADDRESS,
+      chain: viemChain,
+      address: holdings,
       abi: HOLDINGS_ABI,
       functionName: "withdraw",
-      args: [USDC_ADDRESS, amountRaw],
+      args: [usdc, amountRaw],
     });
 
     await this.publicClient.waitForTransactionReceipt({ hash });
@@ -184,12 +186,13 @@ export class AccountModule {
   async mintCompleteSets(marketId: string, amount: number): Promise<Hex> {
     const wallet = this.requireWallet();
     const account = this.requireAccount();
+    const { viemChain, settlement } = this.chainConfig;
     const amountRaw = parseUnits(amount.toString(), 6);
 
     const hash = await wallet.writeContract({
       account,
-      chain: baseSepolia,
-      address: SETTLEMENT_ADDRESS,
+      chain: viemChain,
+      address: settlement,
       abi: SETTLEMENT_ABI,
       functionName: "mintCompleteSetsFromHoldings",
       args: [marketId as Hex, amountRaw],
@@ -206,12 +209,13 @@ export class AccountModule {
   ): Promise<Hex> {
     const wallet = this.requireWallet();
     const account = this.requireAccount();
+    const { viemChain, settlement } = this.chainConfig;
     const amountRaw = parseUnits(amount.toString(), 6);
 
     const hash = await wallet.writeContract({
       account,
-      chain: baseSepolia,
-      address: SETTLEMENT_ADDRESS,
+      chain: viemChain,
+      address: settlement,
       abi: SETTLEMENT_ABI,
       functionName: "burnCompleteSetsFromHoldings",
       args: [marketId as Hex, amountRaw, this.address, creditInternal],
@@ -226,9 +230,10 @@ export class AccountModule {
   async gaslessSetup(): Promise<GaslessOperatorResult> {
     const wallet = this.requireWallet();
     const account = this.requireAccount();
+    const { settlement, holdings } = this.chainConfig;
 
     const nonce = (await this.publicClient.readContract({
-      address: HOLDINGS_ADDRESS,
+      address: holdings,
       abi: OPERATOR_NONCE_ABI,
       functionName: "operatorNonce",
       args: [this.address],
@@ -238,12 +243,12 @@ export class AccountModule {
 
     const signature = await wallet.signTypedData({
       account,
-      domain: HOLDINGS_EIP712_DOMAIN,
+      domain: holdingsDomain(this.chainConfig),
       types: OPERATOR_APPROVAL_TYPES,
       primaryType: "OperatorApproval",
       message: {
         user: this.address,
-        operator: SETTLEMENT_ADDRESS,
+        operator: settlement,
         approved: true,
         nonce,
         deadline,
@@ -262,6 +267,7 @@ export class AccountModule {
   async gaslessDeposit(amount: number): Promise<GaslessDepositResult> {
     const wallet = this.requireWallet();
     const account = this.requireAccount();
+    const { usdc, holdings } = this.chainConfig;
     const amountRaw = parseUnits(amount.toString(), 6);
 
     const nonce = BigInt(Date.now());
@@ -269,15 +275,15 @@ export class AccountModule {
 
     const signature = await wallet.signTypedData({
       account,
-      domain: PERMIT2_EIP712_DOMAIN,
+      domain: permit2Domain(this.chainConfig),
       types: PERMIT_TRANSFER_FROM_TYPES,
       primaryType: "PermitTransferFrom",
       message: {
         permitted: {
-          token: USDC_ADDRESS,
+          token: usdc,
           amount: amountRaw,
         },
-        spender: HOLDINGS_ADDRESS,
+        spender: holdings,
         nonce,
         deadline,
       },

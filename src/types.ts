@@ -376,7 +376,10 @@ export interface GaslessDepositRequest {
 // ─── Client Options ───
 
 export interface ContextClientOptions {
+  /** Which chain to use. @default "mainnet" */
+  chain?: "mainnet" | "testnet";
   apiKey?: string;
+  /** Override the API base URL (ignores chain preset). */
   baseUrl?: string;
   rpcUrl?: string;
   signer?: SignerInput;

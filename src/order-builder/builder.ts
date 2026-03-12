@@ -1,5 +1,6 @@
 import type { Account, Address, Hex, WalletClient } from "viem";
 import { DEFAULT_EXPIRY_SECONDS } from "../constants.js";
+import type { ChainConfig } from "../config.js";
 import {
   randomNonce,
   signOrder,
@@ -45,6 +46,7 @@ export class OrderBuilder {
   constructor(
     private readonly walletClient: WalletClient,
     private readonly account: Account,
+    private readonly chainConfig: ChainConfig,
   ) {}
 
   get address(): Address {
@@ -73,7 +75,7 @@ export class OrderBuilder {
       inventoryModeConstraint: req.inventoryModeConstraint ?? 0,
     };
 
-    const signature = await signOrder(this.walletClient, this.account, order);
+    const signature = await signOrder(this.walletClient, this.account, order, this.chainConfig);
 
     return {
       type: "limit",
@@ -110,6 +112,7 @@ export class OrderBuilder {
       this.walletClient,
       this.account,
       intent,
+      this.chainConfig,
     );
 
     return {
@@ -129,6 +132,7 @@ export class OrderBuilder {
       this.account,
       this.address,
       nonce,
+      this.chainConfig,
     );
   }
 }
