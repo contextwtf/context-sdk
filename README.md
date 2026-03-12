@@ -15,40 +15,99 @@
 
 ```bash
 npm install context-markets
+# or
+yarn add context-markets
+# or
+pnpm add context-markets
 ```
 
 ## Quick Start
+
+### Read Market Data (no auth)
 
 ```ts
 import { ContextClient } from "context-markets";
 
 const ctx = new ContextClient();
 
-// Browse markets
+// Search and list markets
 const { markets } = await ctx.markets.list({ query: "elections", status: "active" });
 
-// Get quotes
+// Get quotes, orderbook, oracle
 const quotes = await ctx.markets.quotes(markets[0].id);
+const book = await ctx.markets.orderbook(markets[0].id);
+const oracle = await ctx.markets.oracle(markets[0].id);
+
+// Simulate a trade before placing
+const sim = await ctx.markets.simulate(markets[0].id, {
+  side: "yes",
+  amount: 10,
+  amountType: "usd",
+});
 ```
 
+### Place an Order (requires signer)
+
 ```ts
-// With a signer for trading
+import { ContextClient } from "context-markets";
+
 const ctx = new ContextClient({
   apiKey: process.env.CONTEXT_API_KEY!,
   signer: { privateKey: process.env.CONTEXT_PRIVATE_KEY! as `0x${string}` },
 });
 
-// Place a limit order
-await ctx.orders.create({
+// Place a limit order: buy 10 YES contracts at 45¢
+const result = await ctx.orders.create({
   marketId: "0x...",
   outcome: "yes",
   side: "buy",
   priceCents: 45,
   size: 10,
 });
+
+// Cancel it
+await ctx.orders.cancel(result.order.nonce);
+```
+
+### Wallet Setup & Deposits
+
+```ts
+// One-call setup: approves USDC + operator
+await ctx.account.setup();
+
+// Deposit USDC into Holdings contract
+await ctx.account.deposit(100); // 100 USDC
+
+// Or use gasless (no ETH needed):
+await ctx.account.gaslessSetup();
+await ctx.account.gaslessDeposit(100);
+```
+
+### Create a Market
+
+```ts
+const submission = await ctx.questions.submitAndWait(
+  "Will BTC close above $100k by Dec 31, 2026?"
+);
+const { marketId } = await ctx.markets.create(submission.questions[0].id);
 ```
 
 Need an API key? Visit [context.markets](https://context.markets) or join our [Discord](https://discord.gg/RVmzZsAyM4).
+
+## Configuration
+
+```ts
+new ContextClient({
+  apiKey: "ctx_pk_...",           // Required for authenticated endpoints
+  baseUrl: "https://...",         // Override API base URL
+  rpcUrl: "https://...",          // Override RPC URL for on-chain reads
+  signer: { privateKey: "0x..." } // Required for order signing & wallet ops
+})
+```
+
+The SDK accepts three signer formats: a private key string, a viem `Account` object, or a viem `WalletClient` (for browser wallets).
+
+Prices are in **cents** (1–99). Sizes are in **contracts**. The SDK maps `"yes"` / `"no"` to the correct on-chain outcome index automatically.
 
 ## Documentation
 
