@@ -9,12 +9,12 @@ import {
   toBytes,
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
-import { baseSepolia } from "viem/chains";
 import {
-  EIP712_DOMAIN,
+  settlementDomain,
   ORDER_TYPES,
   MARKET_ORDER_INTENT_TYPES,
   CANCEL_TYPES,
+  type ChainConfig,
 } from "../config.js";
 import { ContextSigningError } from "../errors.js";
 import type { SignerInput } from "../types.js";
@@ -33,7 +33,10 @@ export interface OrderMessage {
   inventoryModeConstraint: number;
 }
 
-export function resolveSigner(input: SignerInput): {
+export function resolveSigner(
+  input: SignerInput,
+  chainConfig: ChainConfig,
+): {
   account: Account;
   walletClient: WalletClient;
 } {
@@ -41,7 +44,7 @@ export function resolveSigner(input: SignerInput): {
     const account = privateKeyToAccount(input.privateKey);
     const walletClient = createWalletClient({
       account,
-      chain: baseSepolia,
+      chain: chainConfig.viemChain,
       transport: http(),
     });
     return { account, walletClient };
@@ -50,7 +53,7 @@ export function resolveSigner(input: SignerInput): {
   if ("account" in input) {
     const walletClient = createWalletClient({
       account: input.account,
-      chain: baseSepolia,
+      chain: chainConfig.viemChain,
       transport: http(),
     });
     return { account: input.account, walletClient };
@@ -77,11 +80,12 @@ export async function signOrder(
   walletClient: WalletClient,
   account: Account,
   order: OrderMessage,
+  chainConfig: ChainConfig,
 ): Promise<Hex> {
   try {
     return await walletClient.signTypedData({
       account,
-      domain: EIP712_DOMAIN,
+      domain: settlementDomain(chainConfig),
       types: ORDER_TYPES,
       primaryType: "Order",
       message: order,
@@ -107,11 +111,12 @@ export async function signMarketOrderIntent(
   walletClient: WalletClient,
   account: Account,
   intent: MarketOrderIntentMessage,
+  chainConfig: ChainConfig,
 ): Promise<Hex> {
   try {
     return await walletClient.signTypedData({
       account,
-      domain: EIP712_DOMAIN,
+      domain: settlementDomain(chainConfig),
       types: MARKET_ORDER_INTENT_TYPES,
       primaryType: "MarketOrderIntent",
       message: intent,
@@ -126,11 +131,12 @@ export async function signCancel(
   account: Account,
   trader: Address,
   nonce: Hex,
+  chainConfig: ChainConfig,
 ): Promise<Hex> {
   try {
     return await walletClient.signTypedData({
       account,
-      domain: EIP712_DOMAIN,
+      domain: settlementDomain(chainConfig),
       types: CANCEL_TYPES,
       primaryType: "CancelNonce",
       message: { trader, nonce },

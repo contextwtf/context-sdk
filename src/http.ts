@@ -1,4 +1,4 @@
-import { API_BASE } from "./config.js";
+import { MAINNET_CONFIG } from "./config.js";
 import { ContextApiError } from "./errors.js";
 
 type FetchFn = (input: string, init?: RequestInit) => Promise<Response>;
@@ -20,7 +20,7 @@ export interface HttpClient {
 
 export function createHttpClient(options: HttpClientOptions = {}): HttpClient {
   const apiKey = options.apiKey;
-  const baseUrl = options.baseUrl ?? API_BASE;
+  const baseUrl = options.baseUrl ?? MAINNET_CONFIG.apiBase;
   const fetchFn: FetchFn =
     options.fetch ?? (globalThis as any).fetch.bind(globalThis);
 

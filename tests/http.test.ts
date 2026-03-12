@@ -110,6 +110,6 @@ describe("createHttpClient", () => {
     await http.get("/test");
 
     const url = fetch.mock.calls[0][0];
-    expect(url).toBe("https://api-testnet.context.markets/v2/test");
+    expect(url).toBe("https://api.context.markets/v2/test");
   });
 });

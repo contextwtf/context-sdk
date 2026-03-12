@@ -1,30 +1,71 @@
-import type { Address } from "viem";
+import type { Address, Chain } from "viem";
+import { base, baseSepolia } from "viem/chains";
 
-// ─── API ───
+// ─── Chain Configuration ───
 
-export const API_BASE = "https://api-testnet.context.markets/v2";
+export interface ChainConfig {
+  chainId: number;
+  viemChain: Chain;
+  apiBase: string;
+  settlement: Address;
+  holdings: Address;
+  usdc: Address;
+  permit2: Address;
+}
 
-// ─── Contract Addresses (Base Sepolia) ───
+export const MAINNET_CONFIG: ChainConfig = {
+  chainId: 8453,
+  viemChain: base,
+  apiBase: "https://api.context.markets/v2",
+  settlement: "0x000000000000aF25d425101A0C8e3adFB67BCfD0",
+  holdings: "0x0000000000001dDF1a31899d57ddAd89DE10ab1b",
+  usdc: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+  permit2: "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+};
 
-export const SETTLEMENT_ADDRESS: Address =
-  "0xD91935a82Af48ff79a68134d9Eab8fc9e5d3504D";
-export const HOLDINGS_ADDRESS: Address =
-  "0x0a6D61723E8AE8e34734A84075a1b58aB3eEca6a";
-export const USDC_ADDRESS: Address =
-  "0xBbee2756d3169CF7065e5E9C4A5EA9b1D1Fd415e";
-export const PERMIT2_ADDRESS: Address =
-  "0x000000000022D473030F116dDEE9F6B43aC78BA3";
+export const TESTNET_CONFIG: ChainConfig = {
+  chainId: 84532,
+  viemChain: baseSepolia,
+  apiBase: "https://api-testnet.context.markets/v2",
+  settlement: "0xD91935a82Af48ff79a68134d9Eab8fc9e5d3504D",
+  holdings: "0x0a6D61723E8AE8e34734A84075a1b58aB3eEca6a",
+  usdc: "0xBbee2756d3169CF7065e5E9C4A5EA9b1D1Fd415e",
+  permit2: "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+};
 
-export const CHAIN_ID = 84532; // Base Sepolia
+export type ChainOption = "mainnet" | "testnet";
 
-// ─── EIP-712 Domain ───
+export function resolveChainConfig(chain: ChainOption = "mainnet"): ChainConfig {
+  return chain === "testnet" ? TESTNET_CONFIG : MAINNET_CONFIG;
+}
 
-export const EIP712_DOMAIN = {
-  name: "Settlement" as const,
-  version: "1" as const,
-  chainId: CHAIN_ID,
-  verifyingContract: SETTLEMENT_ADDRESS,
-} as const;
+// ─── EIP-712 Domain Builders ───
+
+export function settlementDomain(config: ChainConfig) {
+  return {
+    name: "Settlement" as const,
+    version: "1" as const,
+    chainId: config.chainId,
+    verifyingContract: config.settlement,
+  } as const;
+}
+
+export function holdingsDomain(config: ChainConfig) {
+  return {
+    name: "Holdings" as const,
+    version: "1" as const,
+    chainId: config.chainId,
+    verifyingContract: config.holdings,
+  } as const;
+}
+
+export function permit2Domain(config: ChainConfig) {
+  return {
+    name: "Permit2" as const,
+    chainId: config.chainId,
+    verifyingContract: config.permit2,
+  } as const;
+}
 
 // ─── EIP-712 Types ───
 
@@ -64,23 +105,6 @@ export const CANCEL_TYPES = {
     { name: "nonce", type: "bytes32" },
   ],
 } as const;
-
-// ─── EIP-712 Domains (gasless) ───
-
-export const HOLDINGS_EIP712_DOMAIN = {
-  name: "Holdings",
-  version: "1",
-  chainId: CHAIN_ID,
-  verifyingContract: HOLDINGS_ADDRESS,
-} as const;
-
-export const PERMIT2_EIP712_DOMAIN = {
-  name: "Permit2" as const,
-  chainId: CHAIN_ID,
-  verifyingContract: PERMIT2_ADDRESS,
-} as const;
-
-// ─── EIP-712 Types (gasless) ───
 
 export const OPERATOR_APPROVAL_TYPES = {
   OperatorApproval: [
@@ -217,3 +241,24 @@ export const OPERATOR_NONCE_ABI = [
     outputs: [{ name: "", type: "uint256" }],
   },
 ] as const;
+
+// ─── Legacy Compat (deprecated — use ChainConfig) ───
+
+/** @deprecated Use `resolveChainConfig("mainnet").apiBase` */
+export const API_BASE = MAINNET_CONFIG.apiBase;
+/** @deprecated Use `resolveChainConfig(chain).settlement` */
+export const SETTLEMENT_ADDRESS = MAINNET_CONFIG.settlement;
+/** @deprecated Use `resolveChainConfig(chain).holdings` */
+export const HOLDINGS_ADDRESS = MAINNET_CONFIG.holdings;
+/** @deprecated Use `resolveChainConfig(chain).usdc` */
+export const USDC_ADDRESS = MAINNET_CONFIG.usdc;
+/** @deprecated Use `resolveChainConfig(chain).permit2` */
+export const PERMIT2_ADDRESS = MAINNET_CONFIG.permit2;
+/** @deprecated Use `resolveChainConfig(chain).chainId` */
+export const CHAIN_ID = MAINNET_CONFIG.chainId;
+/** @deprecated Use `settlementDomain(config)` */
+export const EIP712_DOMAIN = settlementDomain(MAINNET_CONFIG);
+/** @deprecated Use `holdingsDomain(config)` */
+export const HOLDINGS_EIP712_DOMAIN = holdingsDomain(MAINNET_CONFIG);
+/** @deprecated Use `permit2Domain(config)` */
+export const PERMIT2_EIP712_DOMAIN = permit2Domain(MAINNET_CONFIG);
