@@ -8,7 +8,7 @@
  * Usage:
  *   npx tsx examples/setup-trader-wallet.ts
  */
-import { ContextClient } from "@contextwtf/sdk";
+import { ContextClient } from "context-markets";
 import type { Hex } from "viem";
 
 async function main() {

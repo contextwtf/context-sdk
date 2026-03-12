@@ -4,7 +4,7 @@
  * Usage:
  *   CONTEXT_API_KEY=... CONTEXT_PRIVATE_KEY=... npx tsx examples/deposit-usdc.ts [amount]
  */
-import { ContextClient } from "@contextwtf/sdk";
+import { ContextClient } from "context-markets";
 import type { Hex } from "viem";
 
 async function main() {

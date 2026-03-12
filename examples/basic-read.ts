@@ -4,7 +4,7 @@
  * Usage:
  *   npx tsx examples/basic-read.ts
  */
-import { ContextClient } from "@contextwtf/sdk";
+import { ContextClient } from "context-markets";
 
 async function main() {
   const ctx = new ContextClient();

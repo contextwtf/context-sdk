@@ -1,6 +1,6 @@
 # Context SDK
 
-[![npm](https://img.shields.io/npm/v/@contextwtf/sdk)](https://www.npmjs.com/package/@contextwtf/sdk)
+[![npm](https://img.shields.io/npm/v/context-markets)](https://www.npmjs.com/package/context-markets)
 
 TypeScript SDK for trading on [Context Markets](https://context.markets) — an AI-powered prediction market platform on Base.
 
@@ -9,7 +9,7 @@ For the full quickstart guide, API reference, and developer docs, visit [docs.co
 ## Install
 
 ```bash
-npm install @contextwtf/sdk
+npm install context-markets
 ```
 
 ## Quick Start
@@ -17,7 +17,7 @@ npm install @contextwtf/sdk
 ### Read Market Data (no auth)
 
 ```ts
-import { ContextClient } from "@contextwtf/sdk";
+import { ContextClient } from "context-markets";
 
 const ctx = new ContextClient();
 
@@ -43,7 +43,7 @@ const sim = await ctx.markets.simulate(market.id, {
 ### Place an Order (requires signer)
 
 ```ts
-import { ContextClient } from "@contextwtf/sdk";
+import { ContextClient } from "context-markets";
 
 const ctx = new ContextClient({
   apiKey: process.env.CONTEXT_API_KEY!,
