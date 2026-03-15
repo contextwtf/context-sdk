@@ -152,6 +152,13 @@ export const ERC20_ABI = [
     ],
     outputs: [{ name: "", type: "uint256" }],
   },
+  {
+    name: "balanceOf",
+    type: "function",
+    stateMutability: "view",
+    inputs: [{ name: "account", type: "address" }],
+    outputs: [{ name: "", type: "uint256" }],
+  },
 ] as const;
 
 export const HOLDINGS_ABI = [

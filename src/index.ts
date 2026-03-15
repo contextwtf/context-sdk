@@ -114,7 +114,11 @@ export type {
   OutcomeTokenBalance,
   TokenBalance,
   SettlementBalance,
-  // Wallet
+  // Account
+  AccountStatus,
+  SetupResult,
+  DepositResult,
+  // Wallet (deprecated aliases)
   WalletStatus,
   WalletSetupResult,
   // Gasless

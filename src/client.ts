@@ -34,12 +34,16 @@ export class ContextClient {
   /** The resolved chain configuration. */
   readonly chainConfig: ChainConfig;
 
+  /** Which chain this client is connected to. */
+  readonly chain: "mainnet" | "testnet";
+
   /** The trader's on-chain address, or null if no signer was provided. */
   readonly address: Address | null;
 
   constructor(options: ContextClientOptions = {}) {
     const chainConfig = resolveChainConfig(options.chain);
     this.chainConfig = chainConfig;
+    this.chain = options.chain ?? "mainnet";
 
     const http: HttpClient = createHttpClient({
       apiKey: options.apiKey,
@@ -64,6 +68,6 @@ export class ContextClient {
     this.questions = new Questions(http);
     this.orders = new Orders(http, builder, address);
     this.portfolio = new PortfolioModule(http, address);
-    this.account = new AccountModule(http, walletClient, account, chainConfig, options.rpcUrl);
+    this.account = new AccountModule(http, walletClient, account, chainConfig, this.chain, options.rpcUrl);
   }
 }

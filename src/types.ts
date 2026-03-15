@@ -336,26 +336,34 @@ export interface BulkOperation {
   cancel?: { trader: string; nonce: string; signature: string };
 }
 
-// ─── Wallet Types (client-side only, not API responses) ───
+// ─── Account Types (client-side only, not API responses) ───
 
-export interface WalletStatus {
+export interface AccountStatus {
   address: Address;
   ethBalance: bigint;
+  usdcBalance: bigint;
   usdcAllowance: bigint;
   isOperatorApproved: boolean;
-  needsApprovals: boolean;
-  /**
-   * Whether the wallet needs gasless setup (operator approval only).
-   * Gasless deposits use Permit2 signatures, so no USDC allowance is required.
-   * Use this instead of `needsApprovals` when your app uses gasless deposits.
-   */
-  needsGaslessSetup: boolean;
+  needsUsdcApproval: boolean;
+  needsOperatorApproval: boolean;
+  isReady: boolean;
 }
 
-export interface WalletSetupResult {
-  usdcApprovalTx: Hex | null;
-  operatorApprovalTx: Hex | null;
+export interface SetupResult {
+  usdcApproval: { needed: boolean; txHash: Hex | null };
+  operatorApproval: { needed: boolean; txHash: Hex | null };
 }
+
+export interface DepositResult {
+  txHash: Hex;
+  amount: string;
+  gasless: boolean;
+}
+
+/** @deprecated Use AccountStatus */
+export type WalletStatus = AccountStatus;
+/** @deprecated Use SetupResult */
+export type WalletSetupResult = SetupResult;
 
 export interface GaslessOperatorRequest {
   user: Address;

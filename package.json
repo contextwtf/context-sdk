@@ -1,6 +1,6 @@
 {
   "name": "context-markets",
-  "version": "0.5.1",
+  "version": "0.6.0",
   "description": "TypeScript SDK for Context prediction markets",
   "homepage": "https://github.com/contextwtf/context-sdk#readme",
   "bugs": {

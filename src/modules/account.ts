@@ -24,8 +24,9 @@ import {
 } from "../config.js";
 import { ContextConfigError } from "../errors.js";
 import type {
-  WalletStatus,
-  WalletSetupResult,
+  AccountStatus,
+  SetupResult,
+  DepositResult,
   GaslessOperatorRequest,
   GaslessOperatorResult,
   GaslessDepositRequest,
@@ -40,6 +41,7 @@ export class AccountModule {
     private readonly walletClient: WalletClient | null,
     private readonly account: Account | null,
     private readonly chainConfig: ChainConfig,
+    private readonly chain: "mainnet" | "testnet",
     rpcUrl?: string,
   ) {
     this.publicClient = createPublicClient({
@@ -75,12 +77,18 @@ export class AccountModule {
     return this.account;
   }
 
-  async status(): Promise<WalletStatus> {
+  async status(): Promise<AccountStatus> {
     const addr = this.address;
     const { settlement, holdings, usdc } = this.chainConfig;
-    const [ethBalance, usdcAllowance, isOperatorApproved] =
+    const [ethBalance, usdcBalance, usdcAllowance, isOperatorApproved] =
       await Promise.all([
         this.publicClient.getBalance({ address: addr }),
+        this.publicClient.readContract({
+          address: usdc,
+          abi: ERC20_ABI,
+          functionName: "balanceOf",
+          args: [addr],
+        }),
         this.publicClient.readContract({
           address: usdc,
           abi: ERC20_ABI,
@@ -95,57 +103,112 @@ export class AccountModule {
         }),
       ]);
 
+    const needsUsdcApproval = usdcAllowance === 0n;
+    const needsOperatorApproval = !isOperatorApproved;
+
     return {
       address: addr,
       ethBalance,
+      usdcBalance,
       usdcAllowance,
       isOperatorApproved,
-      needsApprovals: usdcAllowance === 0n || !isOperatorApproved,
-      needsGaslessSetup: !isOperatorApproved,
+      needsUsdcApproval,
+      needsOperatorApproval,
+      isReady: !needsUsdcApproval && !needsOperatorApproval,
     };
   }
 
-  async setup(): Promise<WalletSetupResult> {
+  // ─── Granular Approval Methods ───
+
+  async approveUsdc(): Promise<Hex | null> {
     const wallet = this.requireWallet();
     const account = this.requireAccount();
-    const { viemChain, settlement, holdings, usdc } = this.chainConfig;
-    const walletStatus = await this.status();
-    let usdcApprovalTx: Hex | null = null;
-    let operatorApprovalTx: Hex | null = null;
+    const { viemChain, holdings, usdc } = this.chainConfig;
+    const status = await this.status();
+    if (!status.needsUsdcApproval) return null;
 
-    if (walletStatus.usdcAllowance === 0n) {
-      usdcApprovalTx = await wallet.writeContract({
-        account,
-        chain: viemChain,
-        address: usdc,
-        abi: ERC20_ABI,
-        functionName: "approve",
-        args: [holdings, maxUint256],
-      });
-    }
-
-    if (!walletStatus.isOperatorApproved) {
-      operatorApprovalTx = await wallet.writeContract({
-        account,
-        chain: viemChain,
-        address: holdings,
-        abi: HOLDINGS_ABI,
-        functionName: "setOperator",
-        args: [settlement, true],
-      });
-    }
-
-    return { usdcApprovalTx, operatorApprovalTx };
-  }
-
-  async mintTestUsdc(amount: number = 1000): Promise<unknown> {
-    return this.http.post(ENDPOINTS.balance.mintTestUsdc, {
-      address: this.address,
-      amount: amount.toString(),
+    const hash = await wallet.writeContract({
+      account,
+      chain: viemChain,
+      address: usdc,
+      abi: ERC20_ABI,
+      functionName: "approve",
+      args: [holdings, maxUint256],
     });
+
+    await this.publicClient.waitForTransactionReceipt({ hash });
+    return hash;
   }
 
-  async deposit(amount: number): Promise<Hex> {
+  async approveOperator(): Promise<Hex | null> {
+    const wallet = this.requireWallet();
+    const account = this.requireAccount();
+    const { viemChain, settlement, holdings } = this.chainConfig;
+    const status = await this.status();
+    if (!status.needsOperatorApproval) return null;
+
+    const hash = await wallet.writeContract({
+      account,
+      chain: viemChain,
+      address: holdings,
+      abi: HOLDINGS_ABI,
+      functionName: "setOperator",
+      args: [settlement, true],
+    });
+
+    await this.publicClient.waitForTransactionReceipt({ hash });
+    return hash;
+  }
+
+  // ─── Chain-Aware Dispatchers ───
+
+  async setup(): Promise<SetupResult> {
+    if (this.chain === "testnet") {
+      const result = await this.gaslessSetup();
+      return {
+        usdcApproval: { needed: false, txHash: null },
+        operatorApproval: { needed: true, txHash: result.txHash as Hex },
+      };
+    }
+    return this.onchainSetup();
+  }
+
+  async deposit(amount: number): Promise<DepositResult> {
+    if (this.chain === "testnet") {
+      const result = await this.gaslessDeposit(amount);
+      return {
+        txHash: result.txHash as Hex,
+        amount: result.amount,
+        gasless: true,
+      };
+    }
+    const amountRaw = parseUnits(amount.toString(), 6);
+    const hash = await this.onchainDeposit(amount);
+    return { txHash: hash, amount: amountRaw.toString(), gasless: false };
+  }
+
+  // ─── On-Chain Methods ───
+
+  async onchainSetup(): Promise<SetupResult> {
+    const status = await this.status();
+
+    const usdcTx = status.needsUsdcApproval
+      ? await this.approveUsdcUnchecked()
+      : null;
+    const operatorTx = status.needsOperatorApproval
+      ? await this.approveOperatorUnchecked()
+      : null;
+
+    return {
+      usdcApproval: { needed: status.needsUsdcApproval, txHash: usdcTx },
+      operatorApproval: {
+        needed: status.needsOperatorApproval,
+        txHash: operatorTx,
+      },
+    };
+  }
+
+  async onchainDeposit(amount: number): Promise<Hex> {
     const wallet = this.requireWallet();
     const account = this.requireAccount();
     const { viemChain, holdings, usdc } = this.chainConfig;
@@ -181,6 +244,13 @@ export class AccountModule {
 
     await this.publicClient.waitForTransactionReceipt({ hash });
     return hash;
+  }
+
+  async mintTestUsdc(amount: number = 1000): Promise<unknown> {
+    return this.http.post(ENDPOINTS.balance.mintTestUsdc, {
+      address: this.address,
+      amount: amount.toString(),
+    });
   }
 
   async mintCompleteSets(marketId: string, amount: number): Promise<Hex> {
@@ -316,5 +386,43 @@ export class AccountModule {
       ENDPOINTS.gasless.depositWithPermit,
       req,
     );
+  }
+
+  // ─── Private helpers (skip status check, used by onchainSetup) ───
+
+  private async approveUsdcUnchecked(): Promise<Hex> {
+    const wallet = this.requireWallet();
+    const account = this.requireAccount();
+    const { viemChain, holdings, usdc } = this.chainConfig;
+
+    const hash = await wallet.writeContract({
+      account,
+      chain: viemChain,
+      address: usdc,
+      abi: ERC20_ABI,
+      functionName: "approve",
+      args: [holdings, maxUint256],
+    });
+
+    await this.publicClient.waitForTransactionReceipt({ hash });
+    return hash;
+  }
+
+  private async approveOperatorUnchecked(): Promise<Hex> {
+    const wallet = this.requireWallet();
+    const account = this.requireAccount();
+    const { viemChain, settlement, holdings } = this.chainConfig;
+
+    const hash = await wallet.writeContract({
+      account,
+      chain: viemChain,
+      address: holdings,
+      abi: HOLDINGS_ABI,
+      functionName: "setOperator",
+      args: [settlement, true],
+    });
+
+    await this.publicClient.waitForTransactionReceipt({ hash });
+    return hash;
   }
 }
