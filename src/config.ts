@@ -190,6 +190,7 @@ export const HOLDINGS_ABI = [
     type: "function",
     stateMutability: "nonpayable",
     inputs: [
+      { name: "to", type: "address" },
       { name: "token", type: "address" },
       { name: "amount", type: "uint256" },
     ],
@@ -200,6 +201,7 @@ export const HOLDINGS_ABI = [
     type: "function",
     stateMutability: "nonpayable",
     inputs: [
+      { name: "to", type: "address" },
       { name: "token", type: "address" },
       { name: "amount", type: "uint256" },
     ],

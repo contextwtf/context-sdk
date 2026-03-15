@@ -157,7 +157,7 @@ export class AccountModule {
       address: holdings,
       abi: HOLDINGS_ABI,
       functionName: "deposit",
-      args: [usdc, amountRaw],
+      args: [this.address, usdc, amountRaw],
     });
 
     await this.publicClient.waitForTransactionReceipt({ hash });
@@ -176,7 +176,7 @@ export class AccountModule {
       address: holdings,
       abi: HOLDINGS_ABI,
       functionName: "withdraw",
-      args: [usdc, amountRaw],
+      args: [this.address, usdc, amountRaw],
     });
 
     await this.publicClient.waitForTransactionReceipt({ hash });
