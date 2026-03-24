@@ -27,11 +27,13 @@ import type {
   AccountStatus,
   SetupResult,
   DepositResult,
+  MintResult,
   GaslessOperatorRequest,
   GaslessOperatorResult,
   GaslessDepositRequest,
   GaslessDepositResult,
 } from "../types.js";
+import { validateMarketId } from "../validation.js";
 
 export class AccountModule {
   private readonly publicClient: PublicClient;
@@ -120,6 +122,7 @@ export class AccountModule {
 
   // ─── Granular Approval Methods ───
 
+  /** @deprecated Use setup() to handle approvals in one flow, or call the unchecked variant internally. */
   async approveUsdc(): Promise<Hex | null> {
     const wallet = this.requireWallet();
     const account = this.requireAccount();
@@ -140,6 +143,7 @@ export class AccountModule {
     return hash;
   }
 
+  /** @deprecated Use setup() to handle approvals in one flow, or call the unchecked variant internally. */
   async approveOperator(): Promise<Hex | null> {
     const wallet = this.requireWallet();
     const account = this.requireAccount();
@@ -246,8 +250,8 @@ export class AccountModule {
     return hash;
   }
 
-  async mintTestUsdc(amount: number = 1000): Promise<unknown> {
-    return this.http.post(ENDPOINTS.balance.mintTestUsdc, {
+  async mintTestUsdc(amount: number = 1000): Promise<MintResult> {
+    return this.http.post<MintResult>(ENDPOINTS.balance.mintTestUsdc, {
       address: this.address,
       amount: amount.toString(),
     });
@@ -258,6 +262,7 @@ export class AccountModule {
     const account = this.requireAccount();
     const { viemChain, settlement } = this.chainConfig;
     const amountRaw = parseUnits(amount.toString(), 6);
+    const validatedMarketId = validateMarketId(marketId);
 
     const hash = await wallet.writeContract({
       account,
@@ -265,7 +270,7 @@ export class AccountModule {
       address: settlement,
       abi: SETTLEMENT_ABI,
       functionName: "mintCompleteSetsFromHoldings",
-      args: [marketId as Hex, amountRaw],
+      args: [validatedMarketId, amountRaw],
     });
 
     await this.publicClient.waitForTransactionReceipt({ hash });
@@ -281,6 +286,7 @@ export class AccountModule {
     const account = this.requireAccount();
     const { viemChain, settlement } = this.chainConfig;
     const amountRaw = parseUnits(amount.toString(), 6);
+    const validatedMarketId = validateMarketId(marketId);
 
     const hash = await wallet.writeContract({
       account,
@@ -288,7 +294,7 @@ export class AccountModule {
       address: settlement,
       abi: SETTLEMENT_ABI,
       functionName: "burnCompleteSetsFromHoldings",
-      args: [marketId as Hex, amountRaw, this.address, creditInternal],
+      args: [validatedMarketId, amountRaw, this.address, creditInternal],
     });
 
     await this.publicClient.waitForTransactionReceipt({ hash });
@@ -340,7 +346,12 @@ export class AccountModule {
     const { usdc, holdings } = this.chainConfig;
     const amountRaw = parseUnits(amount.toString(), 6);
 
-    const nonce = BigInt(Date.now());
+    const bytes = new Uint8Array(8);
+    globalThis.crypto.getRandomValues(bytes);
+    const nonce = bytes.reduce(
+      (acc, byte, index) => acc | (BigInt(byte) << BigInt(index * 8)),
+      0n,
+    );
     const deadline = BigInt(Math.floor(Date.now() / 1000) + 3600);
 
     const signature = await wallet.signTypedData({

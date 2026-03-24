@@ -11,6 +11,7 @@ import {
 } from "../signing/eip712.js";
 import { encodePriceCents, encodeSize, calculateMaxFee } from "./helpers.js";
 import type { PlaceOrderRequest, PlaceMarketOrderRequest } from "../types.js";
+import { validateMarketId } from "../validation.js";
 
 export interface SignedOrder {
   type: "limit";
@@ -54,6 +55,7 @@ export class OrderBuilder {
   }
 
   async buildAndSign(req: PlaceOrderRequest): Promise<SignedOrder> {
+    const marketId = validateMarketId(req.marketId);
     const price = encodePriceCents(req.priceCents);
     const size = encodeSize(req.size);
     const maxFee = calculateMaxFee(price, size);
@@ -62,7 +64,7 @@ export class OrderBuilder {
     const expiry = BigInt(Math.floor(Date.now() / 1000) + expirySeconds);
 
     const order: OrderMessage = {
-      marketId: req.marketId as Hex,
+      marketId,
       trader: this.address,
       price,
       size,
@@ -89,6 +91,7 @@ export class OrderBuilder {
   }
 
   async buildAndSignMarket(req: PlaceMarketOrderRequest): Promise<SignedMarketOrder> {
+    const marketId = validateMarketId(req.marketId);
     const maxPrice = encodePriceCents(req.maxPriceCents);
     const maxSize = encodeSize(req.maxSize);
     const maxFee = calculateMaxFee(maxPrice, maxSize);
@@ -97,7 +100,7 @@ export class OrderBuilder {
     const expiry = BigInt(Math.floor(Date.now() / 1000) + expirySeconds);
 
     const intent: MarketOrderIntentMessage = {
-      marketId: req.marketId as Hex,
+      marketId,
       trader: this.address,
       maxPrice,
       maxSize,

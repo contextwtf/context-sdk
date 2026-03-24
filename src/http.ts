@@ -24,10 +24,11 @@ export function createHttpClient(options: HttpClientOptions = {}): HttpClient {
   const fetchFn: FetchFn =
     options.fetch ?? (globalThis as any).fetch.bind(globalThis);
 
-  function headers(): Record<string, string> {
-    const h: Record<string, string> = {
-      "Content-Type": "application/json",
-    };
+  function headers(hasBody: boolean): Record<string, string> {
+    const h: Record<string, string> = {};
+    if (hasBody) {
+      h["Content-Type"] = "application/json";
+    }
     if (apiKey) {
       h["Authorization"] = `Bearer ${apiKey}`;
     }
@@ -39,7 +40,10 @@ export function createHttpClient(options: HttpClientOptions = {}): HttpClient {
     url: string,
     body?: unknown,
   ): Promise<T> {
-    const init: RequestInit = { method, headers: headers() };
+    const init: RequestInit = {
+      method,
+      headers: headers(body !== undefined),
+    };
     if (body !== undefined) {
       init.body = JSON.stringify(body);
     }

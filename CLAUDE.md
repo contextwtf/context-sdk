@@ -93,3 +93,14 @@ API validation tests (`tests/api-validation.test.ts`) hit a live API and verify 
 - The SDK never reads environment variables — `apiKey`, `baseUrl`, and `signer` are passed programmatically via `ContextClientOptions`
 - Dual-format output: ESM (`dist/index.js`) + CJS (`dist/index.cjs`) + declaration files
 - Endpoint registry is auto-generated and re-exported — don't edit `src/generated/` files directly
+
+## Coding Standards
+
+- **No `as any`** — use proper SDK types from `src/types.ts` or generated types. If the type doesn't fit, fix the type.
+- **No `Math.random()` for security-related values** — use `crypto.getRandomValues()` for nonces, keys, or any value that must be unpredictable.
+- **Never expose private keys** — not in return values, error messages, logs, or serialized output.
+- **Use SDK error types** — throw `ContextApiError` for API failures, `ContextConfigError` for missing config/invalid input, `ContextSigningError` for signing failures. Never throw plain `Error`.
+- **Validate hex inputs at the boundary** — marketId, nonces, addresses. Don't cast strings to `Hex` or `` `0x${string}` `` without verifying format.
+- **Bulk operations must surface errors** — never discard the `errors` array from bulk API responses.
+- **Run `bun run typecheck` before committing** — the build must pass with strict TypeScript checks.
+- **Keep docs in sync** — when changing method signatures or types, update `skills/`, `README.md`, and `docs/`. Package name is `context-markets`.

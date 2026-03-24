@@ -11,6 +11,8 @@ import type {
   CreateOrderResult,
   CancelResult,
   CancelReplaceResult,
+  BulkCreateResult,
+  BulkCancelResult,
   BulkResult,
   GetOrdersParams,
   GetRecentOrdersParams,
@@ -162,19 +164,19 @@ export class Orders {
     );
   }
 
-  async bulkCreate(orders: PlaceOrderRequest[]): Promise<CreateOrderResult[]> {
+  async bulkCreate(orders: PlaceOrderRequest[]): Promise<BulkCreateResult> {
     const builder = this.requireSigner();
     const signed = await Promise.all(
       orders.map((req) => builder.buildAndSign(req)),
     );
-    const res = await this.http.post<{ results: CreateOrderResult[]; errors: unknown[] }>(
+    const res = await this.http.post<BulkCreateResult>(
       ENDPOINTS.orders.bulkCreate,
       { orders: signed },
     );
-    return res.results;
+    return { results: res.results, errors: res.errors };
   }
 
-  async bulkCancel(nonces: Hex[]): Promise<CancelResult[]> {
+  async bulkCancel(nonces: Hex[]): Promise<BulkCancelResult> {
     const builder = this.requireSigner();
     const cancels = await Promise.all(
       nonces.map(async (nonce) => {
@@ -182,11 +184,11 @@ export class Orders {
         return { trader: builder.address, nonce, signature };
       }),
     );
-    const res = await this.http.post<{ results: CancelResult[]; errors: unknown[] }>(
+    const res = await this.http.post<BulkCancelResult>(
       ENDPOINTS.orders.bulkCancel,
       { cancels },
     );
-    return res.results;
+    return { results: res.results, errors: res.errors };
   }
 
   async bulk(

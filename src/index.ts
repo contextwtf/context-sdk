@@ -36,6 +36,7 @@ export {
   USDC_ADDRESS,
   PERMIT2_ADDRESS,
   CHAIN_ID,
+  EIP712_DOMAIN,
   HOLDINGS_EIP712_DOMAIN,
   PERMIT2_EIP712_DOMAIN,
 } from "./config.js";
@@ -85,6 +86,8 @@ export type {
   OrderMarkets,
   OrderList,
   CreateOrderResult,
+  BulkCreateResult,
+  BulkCancelResult,
   Fill,
   PlaceOrderRequest,
   PlaceMarketOrderRequest,
@@ -118,6 +121,7 @@ export type {
   AccountStatus,
   SetupResult,
   DepositResult,
+  MintResult,
   // Wallet (deprecated aliases)
   WalletStatus,
   WalletSetupResult,

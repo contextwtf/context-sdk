@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { ContextClient } from "../src/client.js";
 import { Markets } from "../src/modules/markets.js";
+import { Questions } from "../src/modules/questions.js";
 import { Orders } from "../src/modules/orders.js";
 import { PortfolioModule } from "../src/modules/portfolio.js";
 import { AccountModule } from "../src/modules/account.js";
@@ -10,6 +11,7 @@ describe("ContextClient", () => {
     const ctx = new ContextClient();
 
     expect(ctx.markets).toBeInstanceOf(Markets);
+    expect(ctx.questions).toBeInstanceOf(Questions);
     expect(ctx.orders).toBeInstanceOf(Orders);
     expect(ctx.portfolio).toBeInstanceOf(PortfolioModule);
     expect(ctx.account).toBeInstanceOf(AccountModule);
@@ -27,13 +29,15 @@ describe("ContextClient", () => {
 
     expect(ctx.address).toBe("0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266");
     expect(ctx.markets).toBeInstanceOf(Markets);
+    expect(ctx.questions).toBeInstanceOf(Questions);
     expect(ctx.orders).toBeInstanceOf(Orders);
   });
 
-  it("exposes all four module namespaces", () => {
+  it("exposes all five module namespaces", () => {
     const ctx = new ContextClient();
 
     expect(ctx).toHaveProperty("markets");
+    expect(ctx).toHaveProperty("questions");
     expect(ctx).toHaveProperty("orders");
     expect(ctx).toHaveProperty("portfolio");
     expect(ctx).toHaveProperty("account");

@@ -19,7 +19,7 @@ describe("createHttpClient", () => {
 
     expect(fetch).toHaveBeenCalledWith("https://api.test/markets", {
       method: "GET",
-      headers: { "Content-Type": "application/json" },
+      headers: {},
     });
   });
 
@@ -64,7 +64,7 @@ describe("createHttpClient", () => {
 
     expect(fetch).toHaveBeenCalledWith("https://api.test/orders/123", {
       method: "DELETE",
-      headers: { "Content-Type": "application/json" },
+      headers: {},
     });
   });
 

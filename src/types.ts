@@ -24,6 +24,7 @@ export type CreateOrderResult = components["schemas"]["OrderCreated"];
 export type CancelResult = components["schemas"]["OrderCancelResult"];
 export type CancelReplaceResult = components["schemas"]["OrderCancelReplaceResult"];
 export type BulkResult = components["schemas"]["BulkOrderResult"];
+export type MintResult = components["schemas"]["MintResult"];
 
 export type SimulateResult = components["schemas"]["SimulateResult"];
 export type SimulateWarning = components["schemas"]["SimulateWarning"];
@@ -334,6 +335,16 @@ export interface BulkOperation {
   type: "create" | "cancel";
   order?: Record<string, unknown>;
   cancel?: { trader: string; nonce: string; signature: string };
+}
+
+export interface BulkCreateResult {
+  results: CreateOrderResult[];
+  errors: unknown[];
+}
+
+export interface BulkCancelResult {
+  results: CancelResult[];
+  errors: unknown[];
 }
 
 // ─── Account Types (client-side only, not API responses) ───

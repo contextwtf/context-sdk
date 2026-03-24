@@ -9,7 +9,7 @@ Common patterns for building with the Context Markets SDK. Every snippet is self
 ### Read-only client (no auth required)
 
 ```typescript
-import { ContextClient } from "@contextwtf/sdk";
+import { ContextClient } from "context-markets";
 
 const ctx = new ContextClient();
 
@@ -22,10 +22,11 @@ No API key or signer is needed for read-only operations: listing markets, fetchi
 ### Trading client (apiKey + signer)
 
 ```typescript
-import { ContextClient } from "@contextwtf/sdk";
+import { ContextClient } from "context-markets";
 import type { Hex } from "viem";
 
 const ctx = new ContextClient({
+  chain: "testnet",
   apiKey: "ctx_pk_...",
   signer: { privateKey: "0x..." as Hex },
 });
@@ -86,33 +87,35 @@ status() -> setup() if needed -> mintTestUsdc() -> deposit() -> place orders
 ### Full onboarding code
 
 ```typescript
-import { ContextClient } from "@contextwtf/sdk";
+import { ContextClient } from "context-markets";
 import type { Hex } from "viem";
 
 const ctx = new ContextClient({
+  chain: "testnet",
   apiKey: "ctx_pk_...",
   signer: { privateKey: "0x..." as Hex },
 });
 
 // Step 1: Check wallet status
 const status = await ctx.account.status();
-console.log("Needs approvals:", status.needsApprovals);
+console.log("Needs USDC approval:", status.needsUsdcApproval);
+console.log("Needs operator approval:", status.needsOperatorApproval);
 console.log("Operator approved:", status.isOperatorApproved);
 console.log("USDC allowance:", status.usdcAllowance);
 
 // Step 2: Run setup if needed (approves USDC + sets operator)
-if (status.needsApprovals) {
+if (status.needsUsdcApproval || status.needsOperatorApproval) {
   const result = await ctx.account.setup();
-  console.log("USDC approval tx:", result.usdcApprovalTx);
-  console.log("Operator approval tx:", result.operatorApprovalTx);
+  console.log("USDC approval tx:", result.usdcApproval.txHash);
+  console.log("Operator approval tx:", result.operatorApproval.txHash);
 }
 
 // Step 3: Mint test USDC (testnet only!)
 await ctx.account.mintTestUsdc(1000);
 
 // Step 4: Deposit USDC into the settlement system
-const depositTx = await ctx.account.deposit(500);
-console.log("Deposit tx:", depositTx);
+const deposit = await ctx.account.deposit(500);
+console.log("Deposit tx:", deposit.txHash);
 
 // NOW you can safely place orders
 ```
@@ -122,10 +125,7 @@ console.log("Deposit tx:", depositTx);
 ```typescript
 const status = await ctx.account.status();
 
-if (status.needsApprovals) {
-  // needsApprovals is true when EITHER:
-  //   - usdcAllowance === 0n  (USDC not approved for Holdings contract)
-  //   - isOperatorApproved === false  (Settlement not set as operator)
+if (status.needsUsdcApproval || status.needsOperatorApproval) {
   await ctx.account.setup();
 }
 ```
@@ -270,15 +270,18 @@ console.log("New order nonce:", result.create.order.nonce);
 
 ```typescript
 // Bulk create multiple orders
-const results = await ctx.orders.bulkCreate([
+const createBatch = await ctx.orders.bulkCreate([
   { marketId, outcome: "yes", side: "buy", priceCents: 40, size: 5 },
   { marketId, outcome: "yes", side: "buy", priceCents: 35, size: 10 },
   { marketId, outcome: "no", side: "buy", priceCents: 55, size: 5 },
 ]);
-const nonces = results.map((r) => r.order.nonce);
+const nonces = createBatch.results.map((r) => r.order.nonce);
+console.log("Create errors:", createBatch.errors);
 
 // Bulk cancel multiple orders
-const cancelResults = await ctx.orders.bulkCancel(nonces);
+const cancelBatch = await ctx.orders.bulkCancel(nonces);
+console.log("Cancel results:", cancelBatch.results);
+console.log("Cancel errors:", cancelBatch.errors);
 
 // Bulk mixed: create some + cancel some in one call
 const mixedResult = await ctx.orders.bulk(
@@ -301,7 +304,7 @@ import {
   ContextApiError,
   ContextSigningError,
   ContextConfigError,
-} from "@contextwtf/sdk";
+} from "context-markets";
 
 try {
   const result = await ctx.orders.create({
@@ -377,7 +380,7 @@ if (order.status === "voided") {
 ### Watch price changes
 
 ```typescript
-import { ContextClient } from "@contextwtf/sdk";
+import { ContextClient } from "context-markets";
 
 const ctx = new ContextClient();
 const INTERVAL_MS = 10_000;
@@ -451,7 +454,7 @@ console.log(`Final status: ${filledOrder.status}`);
 
 ## 7. Gotchas & Pitfalls
 
-1. **Must call `setup()` before first trade.** Without on-chain approvals, orders are accepted by the API but voided with `MISSING_OPERATOR_APPROVAL`. Always check `status().needsApprovals` first.
+1. **Must call `setup()` before first trade.** Without on-chain approvals, orders are accepted by the API but voided with `MISSING_OPERATOR_APPROVAL`. Always check `status().needsUsdcApproval` and `status().needsOperatorApproval` first.
 
 2. **Prices are cents, not decimals.** Pass `priceCents: 45` for a 45-cent price. The valid range is 1--99. Do not pass `0.45`.
 
@@ -459,7 +462,7 @@ console.log(`Final status: ${filledOrder.status}`);
 
 4. **SDK never reads environment variables.** Pass `apiKey` and `signer` explicitly via `ContextClientOptions`. There is no automatic `process.env` lookup.
 
-5. **`deposit()` and `withdraw()` wait for the transaction receipt.** These calls block until the on-chain transaction is confirmed. Plan for multi-second latency.
+5. **`deposit()` is chain-aware.** On mainnet it waits for an on-chain receipt; on testnet it uses the gasless relayer and returns a `DepositResult` with `gasless: true`. `withdraw()` remains an on-chain transaction.
 
 6. **Order nonces are `Hex` strings -- save them for cancel.** The nonce returned in `result.order.nonce` is the key you need for `cancel()`, `cancelReplace()`, and `bulkCancel()`.
 
@@ -467,4 +470,4 @@ console.log(`Final status: ${filledOrder.status}`);
 
 8. **Parallel requests are safe.** The SDK is stateless per-call. Use `Promise.all()` freely to fetch multiple markets, orderbooks, or quotes concurrently.
 
-9. **Forward-compatible types with index signatures.** All SDK interfaces include `[key: string]: unknown`, so new API fields will not break existing code. Access new fields with bracket notation: `market["newField"]`.
+9. **Do not assume broad index signatures on SDK types.** Most public interfaces are concrete generated shapes. Access documented fields directly and narrow unknown response data explicitly if you add custom parsing.

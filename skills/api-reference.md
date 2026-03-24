@@ -1,4 +1,4 @@
-# API Reference -- @contextwtf/sdk
+# API Reference -- context-markets
 
 Complete reference for all public classes, methods, types, and constants exported by the SDK.
 
@@ -9,7 +9,7 @@ Complete reference for all public classes, methods, types, and constants exporte
 The main entry point. Instantiate once and access modules via properties.
 
 ```ts
-import { ContextClient } from "@contextwtf/sdk";
+import { ContextClient } from "context-markets";
 
 const ctx = new ContextClient(options?: ContextClientOptions);
 ```
@@ -19,7 +19,9 @@ const ctx = new ContextClient(options?: ContextClientOptions);
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `apiKey` | `string` | No | Bearer token for authenticated endpoints |
-| `baseUrl` | `string` | No | Override API base URL (default: `https://api-testnet.context.markets/v2`) |
+| `chain` | `"mainnet" \| "testnet"` | No | Select Base mainnet or Base Sepolia (default: `"mainnet"`) |
+| `baseUrl` | `string` | No | Override API base URL (default: `https://api.context.markets/v2`) |
+| `rpcUrl` | `string` | No | Override the RPC URL used for on-chain reads |
 | `signer` | `SignerInput` | No | Required for write operations (orders, account) |
 
 ### SignerInput (3 formats)
@@ -43,6 +45,7 @@ All three are normalized internally into `{ account, walletClient }` via `resolv
 |----------|------|-------------|
 | `ctx.address` | `Address \| null` | Signer's on-chain address, or `null` if no signer provided |
 | `ctx.markets` | `Markets` | Market data module (read-only) |
+| `ctx.questions` | `Questions` | Question submission and polling module |
 | `ctx.orders` | `Orders` | Order placement and management |
 | `ctx.portfolio` | `PortfolioModule` | Positions and balances |
 | `ctx.account` | `AccountModule` | On-chain wallet operations |
@@ -443,7 +446,7 @@ The SDK handles EIP-712 signing automatically -- pass human-friendly values.
 | `side` | `"buy" \| "sell"` | Yes | Buy or sell |
 | `priceCents` | `number` | Yes | Price in cents (1-99) |
 | `size` | `number` | Yes | Number of shares (min 0.01) |
-| `expirySeconds` | `number` | No | Order TTL in seconds (default: 3600) |
+| `expirySeconds` | `number` | No | Order TTL in seconds (default: 31_536_000) |
 
 **Returns:**
 
@@ -491,18 +494,36 @@ Atomically cancel an existing order and place a new one. **Requires signer.**
 ### orders.bulkCreate
 
 ```ts
-async bulkCreate(orders: PlaceOrderRequest[]): Promise<CreateOrderResult[]>
+async bulkCreate(orders: PlaceOrderRequest[]): Promise<BulkCreateResult>
 ```
 
 Place multiple orders in a single request. **Requires signer.**
 
+**Returns:**
+
+```ts
+{
+  results: CreateOrderResult[];
+  errors: unknown[];
+}
+```
+
 ### orders.bulkCancel
 
 ```ts
-async bulkCancel(nonces: Hex[]): Promise<CancelResult[]>
+async bulkCancel(nonces: Hex[]): Promise<BulkCancelResult>
 ```
 
 Cancel multiple orders in a single request. **Requires signer.**
+
+**Returns:**
+
+```ts
+{
+  results: CancelResult[];
+  errors: unknown[];
+}
+```
 
 ### orders.bulk
 
@@ -660,12 +681,12 @@ Get balance for a specific token. Both parameters are required (no default addre
 
 ## ctx.account
 
-All methods require a signer. On-chain methods (`setup`, `deposit`, `withdraw`, `mintCompleteSets`, `burnCompleteSets`) send transactions on Base Sepolia and wait for confirmation. The `mintTestUsdc` method is an API call (testnet faucet).
+All methods require a signer. Behavior depends on `chain`: mainnet uses on-chain transactions, while testnet uses the gasless setup/deposit relayers where available. The `mintTestUsdc` method is a Base Sepolia faucet API call.
 
 ### account.status
 
 ```ts
-async status(): Promise<WalletStatus>
+async status(): Promise<AccountStatus>
 ```
 
 Read on-chain approval state. Checks ETH balance, USDC allowance to Holdings, and operator approval for Settlement.
@@ -676,35 +697,40 @@ Read on-chain approval state. Checks ETH balance, USDC allowance to Holdings, an
 {
   address: Address;
   ethBalance: bigint;
+  usdcBalance: bigint;
   usdcAllowance: bigint;
   isOperatorApproved: boolean;
-  needsApprovals: boolean;  // true if usdcAllowance === 0n || !isOperatorApproved
+  needsUsdcApproval: boolean;
+  needsOperatorApproval: boolean;
+  isReady: boolean;
 }
 ```
 
 ### account.setup
 
 ```ts
-async setup(): Promise<WalletSetupResult>
+async setup(): Promise<SetupResult>
 ```
 
-One-call wallet setup. Sends up to two transactions:
+One-call wallet setup. On mainnet it may send up to two transactions:
 1. USDC `approve(Holdings, maxUint256)` -- if allowance is zero
 2. Holdings `setOperator(Settlement, true)` -- if not already approved
+
+On testnet it uses the gasless operator approval relay.
 
 **Returns:**
 
 ```ts
 {
-  usdcApprovalTx: Hex | null;      // tx hash, or null if already approved
-  operatorApprovalTx: Hex | null;   // tx hash, or null if already set
+  usdcApproval: { needed: boolean; txHash: Hex | null };
+  operatorApproval: { needed: boolean; txHash: Hex | null };
 }
 ```
 
 ### account.mintTestUsdc
 
 ```ts
-async mintTestUsdc(amount?: number): Promise<unknown>
+async mintTestUsdc(amount?: number): Promise<MintResult>
 ```
 
 Mint test USDC via the testnet faucet API. Default amount is 1000.
@@ -713,13 +739,31 @@ Mint test USDC via the testnet faucet API. Default amount is 1000.
 |-------|------|---------|-------------|
 | `amount` | `number` | `1000` | USDC amount to mint |
 
+**Returns:**
+
+```ts
+{
+  hash: string;
+}
+```
+
 ### account.deposit
 
 ```ts
-async deposit(amount: number): Promise<Hex>
+async deposit(amount: number): Promise<DepositResult>
 ```
 
-Deposit USDC from wallet into the Holdings contract. Amount is in USDC units (converted to 6 decimals internally). Waits for transaction receipt. Returns the transaction hash.
+Deposit USDC from wallet into the Holdings contract. Amount is in USDC units (converted to 6 decimals internally). On mainnet this waits for the transaction receipt; on testnet it returns the gasless relay result metadata.
+
+**Returns:**
+
+```ts
+{
+  txHash: Hex;
+  amount: string;
+  gasless: boolean;
+}
+```
 
 ### account.withdraw
 
@@ -843,7 +887,6 @@ interface Market {
   metadata: MarketMetadata;
   outcome: number | null;
   contractAddress: string | null;
-  [key: string]: unknown;  // forward-compatibility
 }
 ```
 
@@ -865,8 +908,15 @@ interface Order {
   remainingSize: string;
   percentFilled: number;
   voidedAt: string | null;
-  voidReason: "UNFILLED_MARKET_ORDER" | "UNDER_COLLATERALIZED" | "MISSING_OPERATOR_APPROVAL" | null;
-  [key: string]: unknown;
+  voidReason:
+    | "UNFILLED_MARKET_ORDER"
+    | "UNDER_COLLATERALIZED"
+    | "MISSING_OPERATOR_APPROVAL"
+    | "BELOW_MIN_FILL_SIZE"
+    | "INVALID_SIGNATURE"
+    | "MARKET_RESOLVED"
+    | "ADMIN_VOID"
+    | null;
 }
 ```
 
@@ -899,17 +949,18 @@ class ContextConfigError extends Error {}
 
 ## Exported Constants
 
-Contract addresses and chain config for Base Sepolia (chain ID 84532):
+Legacy exported constants are mainnet presets:
 
 ```ts
 import {
-  API_BASE,              // "https://api-testnet.context.markets/v2"
-  SETTLEMENT_ADDRESS,    // "0xABfB9e3Dc252D59e4e4A3c3537D96F3F207C9b2c"
-  HOLDINGS_ADDRESS,      // "0x769341425095155C0A0620eBC308d4C05980B84a"
-  USDC_ADDRESS,          // "0xBbee2756d3169CF7065e5E9C4A5EA9b1D1Fd415e"
+  API_BASE,              // "https://api.context.markets/v2"
+  SETTLEMENT_ADDRESS,    // "0x000000000000aF25d425101A0C8e3adFB67BCfD0"
+  HOLDINGS_ADDRESS,      // "0x0000000000001dDF1a31899d57ddAd89DE10ab1b"
+  USDC_ADDRESS,          // "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
   PERMIT2_ADDRESS,       // "0x000000000022D473030F116dDEE9F6B43aC78BA3"
-  CHAIN_ID,              // 84532
-} from "@contextwtf/sdk";
+  CHAIN_ID,              // 8453
+  EIP712_DOMAIN,         // settlementDomain(MAINNET_CONFIG)
+} from "context-markets";
 ```
 
 ## Exported Encoding Utilities
@@ -923,5 +974,5 @@ import {
   encodeSize,          // (size: number) => bigint          -- shares (min 0.01) to on-chain (x 1,000,000)
   decodeSize,          // (raw: bigint) => number           -- on-chain back to shares
   calculateMaxFee,     // (price: bigint, size: bigint) => bigint -- 1% of notional, minimum 1n
-} from "@contextwtf/sdk";
+} from "context-markets";
 ```

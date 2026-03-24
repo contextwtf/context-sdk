@@ -170,41 +170,47 @@ describe("Orders module", () => {
       });
     });
 
-    it("bulkCreate() signs all and unwraps results", async () => {
+    it("bulkCreate() signs all and returns results with errors", async () => {
       (http.post as any).mockResolvedValue({
         results: [{ success: true, order: {} }],
-        errors: [],
+        errors: [{ index: 1, message: "failed" }],
       });
 
       const reqs = [
         { marketId: "0xa", outcome: "yes" as const, side: "buy" as const, priceCents: 25, size: 5 },
       ];
 
-      const results = await orders.bulkCreate(reqs);
+      const result = await orders.bulkCreate(reqs);
 
       expect(builder.buildAndSign).toHaveBeenCalledTimes(1);
       expect(http.post).toHaveBeenCalledWith(
         "/orders/bulk/create",
         expect.objectContaining({ orders: expect.any(Array) }),
       );
-      expect(results).toHaveLength(1);
+      expect(result).toEqual({
+        results: [{ success: true, order: {} }],
+        errors: [{ index: 1, message: "failed" }],
+      });
     });
 
-    it("bulkCancel() signs all and unwraps results", async () => {
+    it("bulkCancel() signs all and returns results with errors", async () => {
       (http.post as any).mockResolvedValue({
         results: [{ success: true }],
-        errors: [],
+        errors: [{ nonce: "0xn2", message: "failed" }],
       });
 
       const nonces = ["0xn1" as Hex];
-      const results = await orders.bulkCancel(nonces);
+      const result = await orders.bulkCancel(nonces);
 
       expect(builder.signCancel).toHaveBeenCalledTimes(1);
       expect(http.post).toHaveBeenCalledWith(
         "/orders/bulk/cancel",
         expect.objectContaining({ cancels: expect.any(Array) }),
       );
-      expect(results).toHaveLength(1);
+      expect(result).toEqual({
+        results: [{ success: true }],
+        errors: [{ nonce: "0xn2", message: "failed" }],
+      });
     });
   });
 

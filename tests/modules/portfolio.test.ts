@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { PortfolioModule } from "../../src/modules/portfolio.js";
+import { ContextConfigError } from "../../src/errors.js";
 import type { HttpClient } from "../../src/http.js";
 import type { Address } from "viem";
 
@@ -111,19 +112,19 @@ describe("PortfolioModule", () => {
     });
 
     it("get() throws when no address provided and no default", async () => {
-      await expect(portfolio.get()).rejects.toThrow("Address required");
+      await expect(portfolio.get()).rejects.toThrow(ContextConfigError);
     });
 
     it("balance() throws when no address provided and no default", async () => {
-      await expect(portfolio.balance()).rejects.toThrow("Address required");
+      await expect(portfolio.balance()).rejects.toThrow(ContextConfigError);
     });
 
     it("claimable() throws when no address provided and no default", async () => {
-      await expect(portfolio.claimable()).rejects.toThrow("Address required");
+      await expect(portfolio.claimable()).rejects.toThrow(ContextConfigError);
     });
 
     it("stats() throws when no address provided and no default", async () => {
-      await expect(portfolio.stats()).rejects.toThrow("Address required");
+      await expect(portfolio.stats()).rejects.toThrow(ContextConfigError);
     });
 
     it("get() works with explicit address even without signer", async () => {

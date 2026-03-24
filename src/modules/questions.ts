@@ -1,5 +1,6 @@
 import type { HttpClient } from "../http.js";
 import { ENDPOINTS } from "../endpoints.js";
+import { ContextApiError } from "../errors.js";
 import type {
   SubmitQuestionResult,
   QuestionSubmission,
@@ -12,6 +13,40 @@ const DEFAULT_MAX_ATTEMPTS = 45;
 
 export class Questions {
   constructor(private readonly http: HttpClient) {}
+
+  private async pollSubmission(
+    submissionId: string,
+    label: string,
+    options?: SubmitAndWaitOptions,
+  ): Promise<QuestionSubmission> {
+    const maxAttempts = options?.maxAttempts ?? DEFAULT_MAX_ATTEMPTS;
+    const pollIntervalMs =
+      options?.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS;
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      const submission = await this.getSubmission(submissionId);
+
+      if (submission.status === "completed") {
+        return submission;
+      }
+
+      if (submission.status === "failed") {
+        throw new ContextApiError(422, {
+          message: `${label} ${submissionId} failed`,
+          submission,
+        });
+      }
+
+      if (attempt < maxAttempts) {
+        await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
+      }
+    }
+
+    throw new ContextApiError(408, {
+      message: `${label} polling timed out after ${maxAttempts} attempts`,
+      submissionId,
+    });
+  }
 
   async submit(question: string): Promise<SubmitQuestionResult> {
     return this.http.post<SubmitQuestionResult>(ENDPOINTS.questions.submit, {
@@ -30,33 +65,8 @@ export class Questions {
     draft: AgentSubmitMarketDraft,
     options?: SubmitAndWaitOptions,
   ): Promise<QuestionSubmission> {
-    const pollIntervalMs =
-      options?.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS;
-    const maxAttempts = options?.maxAttempts ?? DEFAULT_MAX_ATTEMPTS;
-
     const { submissionId } = await this.agentSubmit(draft);
-
-    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-      const submission = await this.getSubmission(submissionId);
-
-      if (submission.status === "completed") {
-        return submission;
-      }
-
-      if (submission.status === "failed") {
-        throw new Error(
-          `Agent submission ${submissionId} failed`,
-        );
-      }
-
-      if (attempt < maxAttempts) {
-        await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
-      }
-    }
-
-    throw new Error(
-      `Agent submission ${submissionId} did not complete within ${maxAttempts} attempts`,
-    );
+    return this.pollSubmission(submissionId, "Agent submission", options);
   }
 
   async getSubmission(submissionId: string): Promise<QuestionSubmission> {
@@ -69,32 +79,7 @@ export class Questions {
     question: string,
     options?: SubmitAndWaitOptions,
   ): Promise<QuestionSubmission> {
-    const pollIntervalMs =
-      options?.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS;
-    const maxAttempts = options?.maxAttempts ?? DEFAULT_MAX_ATTEMPTS;
-
     const { submissionId } = await this.submit(question);
-
-    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-      const submission = await this.getSubmission(submissionId);
-
-      if (submission.status === "completed") {
-        return submission;
-      }
-
-      if (submission.status === "failed") {
-        throw new Error(
-          `Question submission ${submissionId} failed`,
-        );
-      }
-
-      if (attempt < maxAttempts) {
-        await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
-      }
-    }
-
-    throw new Error(
-      `Question submission ${submissionId} did not complete within ${maxAttempts} attempts`,
-    );
+    return this.pollSubmission(submissionId, "Question submission", options);
   }
 }

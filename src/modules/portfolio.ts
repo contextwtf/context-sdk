@@ -1,6 +1,7 @@
 import type { Address } from "viem";
 import type { HttpClient } from "../http.js";
 import { ENDPOINTS } from "../endpoints.js";
+import { ContextConfigError } from "../errors.js";
 import type {
   Portfolio,
   Balance,
@@ -22,7 +23,7 @@ export class PortfolioModule {
   private resolveAddress(address?: Address): Address {
     const resolved = address ?? this.defaultAddress;
     if (!resolved) {
-      throw new Error(
+      throw new ContextConfigError(
         "Address required. Either pass an address or configure a signer.",
       );
     }

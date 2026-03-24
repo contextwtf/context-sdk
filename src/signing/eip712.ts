@@ -6,7 +6,6 @@ import {
   createWalletClient,
   http,
   keccak256,
-  toBytes,
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import {
@@ -73,7 +72,9 @@ export function resolveSigner(
 }
 
 export function randomNonce(): Hex {
-  return keccak256(toBytes(`${Date.now()}_${Math.random()}`));
+  const bytes = new Uint8Array(32);
+  globalThis.crypto.getRandomValues(bytes);
+  return keccak256(bytes);
 }
 
 export async function signOrder(

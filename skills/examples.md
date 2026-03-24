@@ -9,7 +9,7 @@ Six self-contained TypeScript scripts covering read-only scanning, trading, port
 Scan active markets without authentication. Fetches quotes for each market and prints a summary with YES/NO prices, spread, volume, and participants.
 
 ```typescript
-import { ContextClient } from "@contextwtf/sdk";
+import { ContextClient } from "context-markets";
 
 async function main() {
   // No apiKey or signer needed for read-only access
@@ -46,11 +46,12 @@ main().catch(console.error);
 Complete trading lifecycle: initialize with signer, ensure wallet is set up, fund the account if empty (mint testnet USDC + deposit), find a market, place an order, check status, then cancel.
 
 ```typescript
-import { ContextClient } from "@contextwtf/sdk";
+import { ContextClient } from "context-markets";
 import type { Hex } from "viem";
 
 async function main() {
   const ctx = new ContextClient({
+    chain: "testnet",
     apiKey: process.env.CONTEXT_API_KEY!,
     signer: { privateKey: process.env.CONTEXT_PRIVATE_KEY! as Hex },
   });
@@ -59,7 +60,10 @@ async function main() {
 
   // Step 1: Ensure wallet approvals are in place
   const walletStatus = await ctx.account.status();
-  if (walletStatus.needsApprovals) {
+  if (
+    walletStatus.needsUsdcApproval ||
+    walletStatus.needsOperatorApproval
+  ) {
     console.log("Setting up wallet approvals...");
     await ctx.account.setup();
   }
@@ -108,7 +112,7 @@ main().catch(console.error);
 Fetch all data a portfolio dashboard needs in parallel: positions, USDC balance (wallet + settlement), claimable amounts from resolved markets, and portfolio stats.
 
 ```typescript
-import { ContextClient } from "@contextwtf/sdk";
+import { ContextClient } from "context-markets";
 import type { Hex } from "viem";
 
 async function main() {
@@ -164,7 +168,7 @@ main().catch(console.error);
 Poll active markets on an interval. Track previous midpoint prices in a Map. Detect and log price movements with directional arrows. Handles SIGINT for clean shutdown.
 
 ```typescript
-import { ContextClient } from "@contextwtf/sdk";
+import { ContextClient } from "context-markets";
 
 async function main() {
   const ctx = new ContextClient();
@@ -220,7 +224,7 @@ main().catch(console.error);
 Place a ladder of buy orders at different price levels (30, 35, 40, 45 cents), then cancel all of them in one call. Demonstrates `bulkCreate` and `bulkCancel`.
 
 ```typescript
-import { ContextClient } from "@contextwtf/sdk";
+import { ContextClient } from "context-markets";
 import type { Hex } from "viem";
 
 async function main() {
@@ -247,20 +251,26 @@ async function main() {
 
   // Place all orders in a single batch call
   console.log("Placing ladder orders...");
-  const results = await ctx.orders.bulkCreate(orders);
+  const createBatch = await ctx.orders.bulkCreate(orders);
   const nonces: Hex[] = [];
 
-  for (const r of results) {
+  for (const r of createBatch.results) {
     console.log(`  ${r.order.price}c x${r.order.size} -> nonce=${r.order.nonce} success=${r.success}`);
     nonces.push(r.order.nonce);
+  }
+  if (createBatch.errors.length > 0) {
+    console.log("Create errors:", createBatch.errors);
   }
 
   // Cancel all orders in a single batch call
   console.log(`\nCancelling ${nonces.length} orders...`);
-  const cancels = await ctx.orders.bulkCancel(nonces);
+  const cancelBatch = await ctx.orders.bulkCancel(nonces);
 
-  for (const c of cancels) {
+  for (const c of cancelBatch.results) {
     console.log(`  cancelled: ${c.success}`);
+  }
+  if (cancelBatch.errors.length > 0) {
+    console.log("Cancel errors:", cancelBatch.errors);
   }
 
   console.log("\nDone -- all ladder orders placed and cancelled.");
@@ -276,7 +286,7 @@ main().catch(console.error);
 Fetch orderbooks for multiple markets. For each, calculate the spread, midpoint, total bid/ask depth in contracts, and detect crossed books (where best bid >= best ask).
 
 ```typescript
-import { ContextClient } from "@contextwtf/sdk";
+import { ContextClient } from "context-markets";
 
 async function main() {
   const ctx = new ContextClient();

@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { Questions } from "../../src/modules/questions.js";
+import { ContextApiError } from "../../src/errors.js";
 import type { HttpClient } from "../../src/http.js";
 import type { AgentSubmitMarketDraft } from "../../src/types.js";
 
@@ -111,7 +112,11 @@ describe("Questions module", () => {
 
     await expect(
       questions.agentSubmitAndWait(draft, { pollIntervalMs: 10, maxAttempts: 3 }),
-    ).rejects.toThrow("Agent submission sub_fail failed");
+    ).rejects.toMatchObject({
+      name: "ContextApiError",
+      status: 422,
+      message: "Agent submission sub_fail failed",
+    } satisfies Partial<ContextApiError>);
   });
 
   it("submitAndWait() polls until completed", async () => {
@@ -134,6 +139,10 @@ describe("Questions module", () => {
 
     await expect(
       questions.submitAndWait("Slow question?", { pollIntervalMs: 10, maxAttempts: 2 }),
-    ).rejects.toThrow("did not complete within 2 attempts");
+    ).rejects.toMatchObject({
+      name: "ContextApiError",
+      status: 408,
+      message: "Question submission polling timed out after 2 attempts",
+    } satisfies Partial<ContextApiError>);
   });
 });
