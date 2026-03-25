@@ -169,11 +169,10 @@ export class Orders {
     const signed = await Promise.all(
       orders.map((req) => builder.buildAndSign(req)),
     );
-    const res = await this.http.post<BulkCreateResult>(
+    return this.http.post<BulkCreateResult>(
       ENDPOINTS.orders.bulkCreate,
       { orders: signed },
     );
-    return { results: res.results, errors: res.errors };
   }
 
   async bulkCancel(nonces: Hex[]): Promise<BulkCancelResult> {
@@ -184,11 +183,10 @@ export class Orders {
         return { trader: builder.address, nonce, signature };
       }),
     );
-    const res = await this.http.post<BulkCancelResult>(
+    return this.http.post<BulkCancelResult>(
       ENDPOINTS.orders.bulkCancel,
       { cancels },
     );
-    return { results: res.results, errors: res.errors };
   }
 
   async bulk(

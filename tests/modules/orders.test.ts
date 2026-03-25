@@ -170,10 +170,10 @@ describe("Orders module", () => {
       });
     });
 
-    it("bulkCreate() signs all and returns results with errors", async () => {
+    it("bulkCreate() signs all and returns schema-aligned results", async () => {
       (http.post as any).mockResolvedValue({
+        success: true,
         results: [{ success: true, order: {} }],
-        errors: [{ index: 1, message: "failed" }],
       });
 
       const reqs = [
@@ -188,15 +188,15 @@ describe("Orders module", () => {
         expect.objectContaining({ orders: expect.any(Array) }),
       );
       expect(result).toEqual({
+        success: true,
         results: [{ success: true, order: {} }],
-        errors: [{ index: 1, message: "failed" }],
       });
     });
 
-    it("bulkCancel() signs all and returns results with errors", async () => {
+    it("bulkCancel() signs all and returns schema-aligned results", async () => {
       (http.post as any).mockResolvedValue({
+        success: true,
         results: [{ success: true }],
-        errors: [{ nonce: "0xn2", message: "failed" }],
       });
 
       const nonces = ["0xn1" as Hex];
@@ -208,8 +208,8 @@ describe("Orders module", () => {
         expect.objectContaining({ cancels: expect.any(Array) }),
       );
       expect(result).toEqual({
+        success: true,
         results: [{ success: true }],
-        errors: [{ nonce: "0xn2", message: "failed" }],
       });
     });
   });

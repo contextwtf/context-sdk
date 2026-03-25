@@ -1,6 +1,6 @@
 {
   "name": "context-markets",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "description": "TypeScript SDK for Context prediction markets",
   "homepage": "https://github.com/contextwtf/context-sdk#readme",
   "bugs": {
@@ -12,7 +12,16 @@
   },
   "license": "MIT",
   "author": "Context",
-  "keywords": ["prediction-markets", "context", "sdk", "typescript", "base", "trading", "web3", "blockchain"],
+  "keywords": [
+    "prediction-markets",
+    "context",
+    "sdk",
+    "typescript",
+    "base",
+    "trading",
+    "web3",
+    "blockchain"
+  ],
   "type": "module",
   "exports": {
     ".": {

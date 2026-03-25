@@ -337,15 +337,9 @@ export interface BulkOperation {
   cancel?: { trader: string; nonce: string; signature: string };
 }
 
-export interface BulkCreateResult {
-  results: CreateOrderResult[];
-  errors: unknown[];
-}
+export type BulkCreateResult = components["schemas"]["BulkOrderCreateResult"];
 
-export interface BulkCancelResult {
-  results: CancelResult[];
-  errors: unknown[];
-}
+export type BulkCancelResult = components["schemas"]["BulkOrderCancelResult"];
 
 // ─── Account Types (client-side only, not API responses) ───
 
