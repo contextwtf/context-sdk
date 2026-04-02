@@ -18,14 +18,28 @@ export {
 } from "./order-builder/helpers.js";
 
 // Chain config
-export type { ChainConfig, ChainOption } from "./config.js";
+export type {
+  ChainConfig,
+  ChainOption,
+  SettlementVersion,
+  TimeInForce,
+} from "./config.js";
 export {
   MAINNET_CONFIG,
   TESTNET_CONFIG,
   resolveChainConfig,
+  getSettlementAddress,
+  getHoldingsAddress,
   settlementDomain,
+  settlementV2Domain,
   holdingsDomain,
   permit2Domain,
+  TIME_IN_FORCE_GTC,
+  TIME_IN_FORCE_IOC,
+  TIME_IN_FORCE_FOK,
+  ORDER_KIND_BUY,
+  ORDER_KIND_SELL_INVENTORY,
+  ORDER_KIND_SELL_NO_INVENTORY,
 } from "./config.js";
 
 // Legacy chain config (deprecated — use ChainConfig presets)
@@ -33,13 +47,21 @@ export {
   API_BASE,
   SETTLEMENT_ADDRESS,
   HOLDINGS_ADDRESS,
+  LEGACY_SETTLEMENT_ADDRESS,
+  SETTLEMENT_V2_ADDRESS,
+  LEGACY_HOLDINGS_ADDRESS,
+  NEW_HOLDINGS_ADDRESS,
   USDC_ADDRESS,
   PERMIT2_ADDRESS,
   CHAIN_ID,
   EIP712_DOMAIN,
+  EIP712_DOMAIN_V2,
   HOLDINGS_EIP712_DOMAIN,
   PERMIT2_EIP712_DOMAIN,
 } from "./config.js";
+
+// Modules
+export { MigrationModule } from "./modules/migration.js";
 
 // Types
 export type {
@@ -51,8 +73,6 @@ export type {
   MarketSearchParams,
   MarketSearchResult,
   // Data
-  QuoteSide,
-  Quotes,
   Orderbook,
   FullOrderbook,
   OrderbookLevel,
@@ -63,10 +83,6 @@ export type {
   PriceInterval,
   OracleResponse,
   OracleData,
-  OracleQuote,
-  OracleQuotesResponse,
-  OracleQuoteRequestResult,
-  OracleQuoteLatest,
   ActivityItem,
   ActivityResponse,
   // Questions & Market Creation
@@ -128,8 +144,6 @@ export type {
   // Gasless
   GaslessOperatorRequest,
   GaslessOperatorResult,
-  GaslessDepositRequest,
-  GaslessDepositResult,
   // Bulk
   BulkOperation,
   BulkResult,
@@ -146,6 +160,23 @@ export type {
   // Config
   ContextClientOptions,
   SignerInput,
+  MigrationBalance,
+  MigrationFundsPlan,
+  MigrationFundsPlanChunk,
+  MigrationFundsPlanToken,
+  PendingMigrationRestorationDraft,
+  PendingMigrationRestoration,
+  SponsoredFundsMigrationStatus,
+  MigrationStatus,
+  StartMigrationResult,
+  DismissMigrationOrdersRequest,
+  DismissMigrationOrdersResult,
+  SignedMigrationAction,
+  SponsoredMigrateFundsRequest,
+  SponsoredMigrateFundsExecution,
+  SponsoredMigrateFundsResult,
+  RestoreMigrationOrderRequest,
+  RestoreMigrationOrdersResult,
 } from "./types.js";
 
 // Generated OpenAPI spec types (for power users / openapi-fetch integration)

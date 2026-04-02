@@ -95,16 +95,6 @@ describe("API Validation: Read-only endpoints (no auth)", () => {
       expect(m.id).toBe(marketId);
     });
 
-    it("quotes(id) → Quotes { marketId, yes, no, spread, timestamp }", async () => {
-      const q = await ctx.markets.quotes(marketId);
-      expectKeys(q, ["marketId", "yes", "no", "spread", "timestamp"], "Quotes");
-      expect(q.marketId).toBe(marketId);
-
-      // QuoteSide shape
-      expectKeys(q.yes, ["bid", "ask", "last"], "QuoteSide (yes)");
-      expectKeys(q.no, ["bid", "ask", "last"], "QuoteSide (no)");
-    });
-
     it("orderbook(id) → Orderbook { bids, asks }", async () => {
       const ob = await ctx.markets.orderbook(marketId);
       expectKeys(ob, ["bids", "asks"], "Orderbook");
@@ -131,7 +121,17 @@ describe("API Validation: Read-only endpoints (no auth)", () => {
     });
 
     it("simulate(id, params) → SimulateResult", async () => {
-      const sim = await ctx.markets.simulate(marketId, {
+      if (!API_KEY) {
+        console.warn("Skipping market simulate test: CONTEXT_API_KEY not set");
+        return;
+      }
+
+      const authedCtx = new ContextClient({
+        apiKey: API_KEY,
+        baseUrl: process.env.CONTEXT_BASE_URL,
+      });
+
+      const sim = await authedCtx.markets.simulate(marketId, {
         side: "yes",
         amount: 10,
         amountType: "usd",
@@ -147,7 +147,17 @@ describe("API Validation: Read-only endpoints (no auth)", () => {
     });
 
     it("simulate(id, { amountType: 'contracts' }) → SimulateResult", async () => {
-      const sim = await ctx.markets.simulate(marketId, {
+      if (!API_KEY) {
+        console.warn("Skipping market simulate test: CONTEXT_API_KEY not set");
+        return;
+      }
+
+      const authedCtx = new ContextClient({
+        apiKey: API_KEY,
+        baseUrl: process.env.CONTEXT_BASE_URL,
+      });
+
+      const sim = await authedCtx.markets.simulate(marketId, {
         side: "no",
         amount: 5,
         amountType: "contracts",
@@ -185,12 +195,6 @@ describe("API Validation: Read-only endpoints (no auth)", () => {
         expect(typeof result.oracle).toBe("object");
         expectKeys(result.oracle, ["lastCheckedAt"], "OracleData");
       }
-    });
-
-    it("oracleQuotes(id) → OracleQuotesResponse { quotes }", async () => {
-      const result = await ctx.markets.oracleQuotes(marketId);
-      expectKeys(result, ["quotes"], "OracleQuotesResponse");
-      expectArrayOf(result.quotes, "quotes");
     });
 
     it("activity(id) → ActivityResponse with pagination", async () => {

@@ -7,7 +7,13 @@ import { Questions } from "./modules/questions.js";
 import { Orders } from "./modules/orders.js";
 import { PortfolioModule } from "./modules/portfolio.js";
 import { AccountModule } from "./modules/account.js";
-import { resolveChainConfig, type ChainConfig } from "./config.js";
+import { MigrationModule } from "./modules/migration.js";
+import {
+  getHoldingsAddress,
+  getSettlementAddress,
+  resolveChainConfig,
+  type ChainConfig,
+} from "./config.js";
 import type { ContextClientOptions } from "./types.js";
 
 /**
@@ -30,6 +36,7 @@ export class ContextClient {
   readonly orders: Orders;
   readonly portfolio: PortfolioModule;
   readonly account: AccountModule;
+  readonly migration: MigrationModule;
 
   /** The resolved chain configuration. */
   readonly chainConfig: ChainConfig;
@@ -41,7 +48,22 @@ export class ContextClient {
   readonly address: Address | null;
 
   constructor(options: ContextClientOptions = {}) {
-    const chainConfig = resolveChainConfig(options.chain);
+    const baseChainConfig = resolveChainConfig(options.chain);
+    const chainConfig: ChainConfig =
+      options.settlementVersion === undefined
+        ? baseChainConfig
+        : {
+            ...baseChainConfig,
+            defaultSettlementVersion: options.settlementVersion,
+            settlement: getSettlementAddress(
+              baseChainConfig,
+              options.settlementVersion,
+            ),
+            holdings: getHoldingsAddress(
+              baseChainConfig,
+              options.settlementVersion,
+            ),
+          };
     this.chainConfig = chainConfig;
     this.chain = options.chain ?? "mainnet";
 
@@ -69,5 +91,13 @@ export class ContextClient {
     this.orders = new Orders(http, builder, address);
     this.portfolio = new PortfolioModule(http, address);
     this.account = new AccountModule(http, walletClient, account, chainConfig, this.chain, options.rpcUrl);
+    this.migration = new MigrationModule(
+      http,
+      builder,
+      walletClient,
+      account,
+      address,
+      chainConfig,
+    );
   }
 }

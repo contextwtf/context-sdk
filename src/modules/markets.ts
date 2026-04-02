@@ -3,16 +3,12 @@ import { ENDPOINTS } from "../endpoints.js";
 import type {
   Market,
   MarketList,
-  Quotes,
   Orderbook,
   FullOrderbook,
   SimulateTradeParams,
   SimulateResult,
   PriceHistory,
   OracleResponse,
-  OracleQuotesResponse,
-  OracleQuoteRequestResult,
-  OracleQuoteLatest,
   ActivityResponse,
   SearchMarketsParams,
   MarketSearchParams,
@@ -55,10 +51,6 @@ export class Markets {
       ENDPOINTS.markets.get(id),
     );
     return res.market;
-  }
-
-  async quotes(marketId: string): Promise<Quotes> {
-    return this.http.get<Quotes>(ENDPOINTS.markets.quotes(marketId));
   }
 
   async orderbook(
@@ -113,27 +105,6 @@ export class Markets {
 
   async oracle(marketId: string): Promise<OracleResponse> {
     return this.http.get<OracleResponse>(ENDPOINTS.markets.oracle(marketId));
-  }
-
-  async oracleQuotes(marketId: string): Promise<OracleQuotesResponse> {
-    return this.http.get<OracleQuotesResponse>(
-      ENDPOINTS.markets.oracleQuotes(marketId),
-    );
-  }
-
-  async latestOracleQuote(marketId: string): Promise<OracleQuoteLatest> {
-    return this.http.get<OracleQuoteLatest>(
-      ENDPOINTS.markets.oracleQuotesLatest(marketId),
-    );
-  }
-
-  async requestOracleQuote(
-    marketId: string,
-  ): Promise<OracleQuoteRequestResult> {
-    return this.http.post<OracleQuoteRequestResult>(
-      ENDPOINTS.markets.oracleQuotes(marketId),
-      {},
-    );
   }
 
   async activity(

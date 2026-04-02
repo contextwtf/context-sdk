@@ -2,6 +2,7 @@ import type { Address, Hex } from "viem";
 import type { HttpClient } from "../http.js";
 import { ENDPOINTS } from "../endpoints.js";
 import type { OrderBuilder } from "../order-builder/builder.js";
+import type { SettlementVersion } from "../config.js";
 import { ContextConfigError } from "../errors.js";
 import type {
   PlaceOrderRequest,
@@ -19,6 +20,14 @@ import type {
   OrderSimulateParams,
   OrderSimulateResult,
 } from "../types.js";
+
+type CancelTarget =
+  | Hex
+  | {
+      nonce: Hex;
+      settlementVersion?: SettlementVersion;
+    }
+  | Pick<Order, "nonce" | "settlementVersion">;
 
 export class Orders {
   constructor(
@@ -133,9 +142,27 @@ export class Orders {
     return this.http.post<CreateOrderResult>(ENDPOINTS.orders.create, signed);
   }
 
-  async cancel(nonce: Hex): Promise<CancelResult> {
+  private resolveCancelTarget(target: CancelTarget) {
+    if (typeof target === "string") {
+      return { nonce: target as Hex, settlementVersion: undefined };
+    }
+
+    return {
+      nonce: target.nonce as Hex,
+      settlementVersion:
+        "settlementVersion" in target
+          ? (target.settlementVersion as SettlementVersion | undefined)
+          : undefined,
+    };
+  }
+
+  async cancel(target: CancelTarget): Promise<CancelResult> {
     const builder = this.requireSigner();
-    const signature = await builder.signCancel(nonce);
+    const { nonce, settlementVersion } = this.resolveCancelTarget(target);
+    const signature =
+      settlementVersion === undefined
+        ? await builder.signCancel(nonce)
+        : await builder.signCancel(nonce, settlementVersion);
     return this.http.post<CancelResult>(ENDPOINTS.orders.cancel, {
       trader: builder.address,
       nonce,
@@ -143,12 +170,17 @@ export class Orders {
     });
   }
 
+  async cancelOrder(order: Pick<Order, "nonce" | "settlementVersion">) {
+    return this.cancel(order);
+  }
+
   async cancelReplace(
     cancelNonce: Hex,
     newOrder: PlaceOrderRequest,
+    settlementVersion?: SettlementVersion,
   ): Promise<CancelReplaceResult> {
     const builder = this.requireSigner();
-    const cancelSig = await builder.signCancel(cancelNonce);
+    const cancelSig = await builder.signCancel(cancelNonce, settlementVersion);
     const signed = await builder.buildAndSign(newOrder);
 
     return this.http.post<CancelReplaceResult>(
@@ -187,6 +219,26 @@ export class Orders {
       ENDPOINTS.orders.bulkCancel,
       { cancels },
     );
+  }
+
+  async bulkCancelOrders(
+    orders: Array<Pick<Order, "nonce" | "settlementVersion">>,
+  ): Promise<BulkCancelResult> {
+    const builder = this.requireSigner();
+    const cancels = await Promise.all(
+      orders.map(async ({ nonce, settlementVersion }) => ({
+        trader: builder.address,
+        nonce,
+        signature: await builder.signCancel(
+          nonce as Hex,
+          settlementVersion as SettlementVersion | undefined,
+        ),
+      })),
+    );
+
+    return this.http.post<BulkCancelResult>(ENDPOINTS.orders.bulkCancel, {
+      cancels,
+    });
   }
 
   async bulk(

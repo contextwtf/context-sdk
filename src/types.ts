@@ -1,5 +1,9 @@
 import type { Address, Hex } from "viem";
 import type { components } from "./generated/api-types.js";
+import type {
+  SettlementVersion,
+  TimeInForce,
+} from "./config.js";
 
 // ─── Re-exported API Types (generated from OpenAPI spec) ───
 // Run `bun run generate` to update from the spec.
@@ -9,15 +13,13 @@ export type OutcomePrice = components["schemas"]["OutcomePrice"];
 export type MarketMetadata = components["schemas"]["MarketMetadata"];
 export type MarketList = components["schemas"]["MarketList"];
 
-export type Quotes = components["schemas"]["Quotes"];
-/** Single side (yes/no) of a quote — { bid, ask, last }. */
-export type QuoteSide = Quotes["yes"];
-
 export type Orderbook = components["schemas"]["Orderbook"];
 /** Single price level in the orderbook. */
 export type OrderbookLevel = Orderbook["bids"][number];
 
-export type Order = components["schemas"]["Order"];
+type GeneratedOrder = components["schemas"]["Order"];
+
+export type Order = GeneratedOrder;
 export type OrderMarkets = Record<string, components["schemas"]["OrderMarketInfo"]>;
 export type OrderList = components["schemas"]["OrderList"];
 export type CreateOrderResult = components["schemas"]["OrderCreated"];
@@ -38,10 +40,6 @@ export type PricePoint = PriceHistory["prices"][number];
 export type OracleResponse = components["schemas"]["OracleSummaryResponse"];
 /** Oracle data with evidence and summary. */
 export type OracleData = NonNullable<OracleResponse["oracle"]>;
-export type OracleQuote = components["schemas"]["OracleQuote"];
-export type OracleQuotesResponse = components["schemas"]["OracleQuoteList"];
-export type OracleQuoteRequestResult = components["schemas"]["OracleQuoteCreated"];
-export type OracleQuoteLatest = components["schemas"]["OracleQuoteLatest"];
 
 export type ActivityItem = components["schemas"]["ActivityItem"];
 export type ActivityResponse = components["schemas"]["ActivityResponse"];
@@ -63,7 +61,6 @@ export type TokenBalance = components["schemas"]["TokenBalance"];
 export type SettlementBalance = components["schemas"]["SettlementBalance"];
 
 export type GaslessOperatorResult = components["schemas"]["GaslessOperatorResult"];
-export type GaslessDepositResult = components["schemas"]["GaslessDepositResult"];
 
 export type SubmitQuestionResult = components["schemas"]["QuestionPostResponse"];
 export type QuestionSubmission = components["schemas"]["SubmissionResponse"];
@@ -213,7 +210,15 @@ export interface PlaceOrderRequest {
   side: "buy" | "sell";
   priceCents: number;
   size: number;
+  buyValue?: number;
   expirySeconds?: number;
+  expiry?: string | bigint;
+  nonce?: Hex;
+  maxFee?: string | bigint;
+  /** Optional explicit version override. Only SettlementV2 signing is supported. */
+  settlementVersion?: SettlementVersion;
+  timeInForce?: TimeInForce;
+  clientOrderType?: "limit" | "market";
   /** Default: 0 (ANY). Set to 2 for SELL orders without existing token inventory. */
   inventoryModeConstraint?: InventoryMode;
   /** Default: 0 (ANY). Set to 1 for maker-only, 2 for taker-only. */
@@ -225,8 +230,28 @@ export interface PlaceMarketOrderRequest {
   outcome: "yes" | "no";
   side: "buy" | "sell";
   maxPriceCents: number;
+  /**
+   * High-level market-order amount.
+   * For SettlementV1 and SettlementV2 sells, this is max shares.
+   * For SettlementV2 buys, this is treated as the pre-fee collateral budget.
+   * The signed onchain cap is `buyValue + maxFee`.
+   */
   maxSize: number;
+  /**
+   * Optional explicit pre-fee collateral budget override for SettlementV2 buy
+   * market orders. The signed onchain cap is `buyValue + maxFee`.
+   */
+  buyValue?: number;
   expirySeconds?: number;
+  expiry?: string | bigint;
+  nonce?: Hex;
+  maxFee?: string | bigint;
+  /** Optional explicit version override. Only SettlementV2 signing is supported. */
+  settlementVersion?: SettlementVersion;
+  timeInForce?: TimeInForce;
+  clientOrderType?: "limit" | "market";
+  inventoryModeConstraint?: InventoryMode;
+  makerRoleConstraint?: MakerRoleConstraint;
 }
 
 export interface SimulateTradeParams {
@@ -372,15 +397,8 @@ export type WalletSetupResult = SetupResult;
 
 export interface GaslessOperatorRequest {
   user: Address;
+  settlementVersion?: SettlementVersion;
   approved?: boolean;
-  nonce: string;
-  deadline: string;
-  signature: Hex;
-}
-
-export interface GaslessDepositRequest {
-  user: Address;
-  amount: string;
   nonce: string;
   deadline: string;
   signature: Hex;
@@ -391,6 +409,8 @@ export interface GaslessDepositRequest {
 export interface ContextClientOptions {
   /** Which chain to use. @default "mainnet" */
   chain?: "mainnet" | "testnet";
+  /** Override the chain preset's default settlement/holdings generation. */
+  settlementVersion?: SettlementVersion;
   apiKey?: string;
   /** Override the API base URL (ignores chain preset). */
   baseUrl?: string;
@@ -402,3 +422,178 @@ export type SignerInput =
   | { privateKey: Hex }
   | { account: import("viem").Account }
   | { walletClient: import("viem").WalletClient };
+
+export interface MigrationBalance {
+  token: Address;
+  balance: string;
+}
+
+export interface MigrationFundsPlanToken {
+  token: Address;
+  amount: string;
+}
+
+export interface MigrationFundsPlanChunk {
+  callCount: number;
+  calls: unknown[];
+  tokens: MigrationFundsPlanToken[];
+}
+
+export interface MigrationFundsPlan {
+  phase: string;
+  callCount: number;
+  chunkCount: number;
+  calls: unknown[];
+  tokens: MigrationFundsPlanToken[];
+  chunks: MigrationFundsPlanChunk[];
+}
+
+export interface PendingMigrationRestorationDraft {
+  type: "limit" | "market";
+  marketId: string;
+  trader?: Address;
+  side: 0 | 1;
+  price: string;
+  size?: string;
+  remainingSize: string;
+  outcomeIndex: number;
+  nonce?: Hex;
+  expiry: string;
+  maxFee: string;
+  timeInForce?: TimeInForce;
+  clientOrderType?: "limit" | "market";
+  makerRoleConstraint: MakerRoleConstraint;
+  inventoryModeConstraint: InventoryMode;
+  reason: string;
+}
+
+export interface PendingMigrationRestoration {
+  id: number;
+  legacyOrderId: number;
+  legacyOrderHash: Hex;
+  legacyMarketId: Hex;
+  status: string;
+  draft: PendingMigrationRestorationDraft;
+  error: string | null;
+  market: {
+    shortQuestion: string;
+    outcomeNames: string[];
+  } | null;
+}
+
+export interface SponsoredFundsMigrationStatus {
+  status: string;
+  userOperationHash: Hex | null;
+  txHash: Hex | null;
+  error: string | null;
+}
+
+export interface MigrationStatus {
+  migrationActive: boolean;
+  walletAddress: Address;
+  holdings: {
+    legacy: Address;
+    new: Address | null;
+  };
+  settlementV2Address: Address;
+  legacyBalances: MigrationBalance[];
+  newBalances: MigrationBalance[];
+  v2OperatorApproved: boolean;
+  newHoldingsOperatorNonce: string | null;
+  fundsMigrationPlan: MigrationFundsPlan;
+  pendingRestorations: PendingMigrationRestoration[];
+  voidedLegacyOrderCount: number;
+  legacyOpenOrderCount: number;
+  sponsoredFundsMigrationAvailable: boolean;
+  sponsoredRelayerAddress: Address | null;
+  sponsoredFundsMigrationStatus: SponsoredFundsMigrationStatus | null;
+  canStart: boolean;
+  canMigrateFunds: boolean;
+  canRestoreOrders: boolean;
+  canDismissOrders: boolean;
+  migrationComplete: boolean;
+}
+
+export interface StartMigrationResult {
+  success: true;
+  retiredCount: number;
+  restorableCount: number;
+  legacyBalances: MigrationBalance[];
+  newBalances: MigrationBalance[];
+  fundsMigrationPlan: MigrationFundsPlan;
+  pendingRestorations: Array<{
+    id: number;
+    legacyOrderId: number;
+    legacyMarketId: Hex;
+    status: string;
+    draft: PendingMigrationRestorationDraft;
+  }>;
+  legacyOpenOrderCount: number;
+}
+
+export interface DismissMigrationOrdersRequest {
+  legacyOrderIds?: number[];
+}
+
+export interface DismissMigrationOrdersResult {
+  success: true;
+  dismissedCount: number;
+}
+
+export interface SignedMigrationAction {
+  nonce: string;
+  deadline: string;
+  signature: Hex;
+}
+
+export type SponsoredMigrateFundsRequest =
+  | {
+      batchWithdraw: SignedMigrationAction;
+      setOperator: SignedMigrationAction;
+    }
+  | {
+      chunks: Array<{
+        batchWithdraw: SignedMigrationAction;
+      }>;
+      setOperator: SignedMigrationAction;
+    };
+
+export interface SponsoredMigrateFundsExecution {
+  userOperationHash: Hex;
+  txHash: Hex;
+}
+
+export interface SponsoredMigrateFundsResult {
+  success: true;
+  userOperationHash: Hex;
+  txHash: Hex;
+  executions: SponsoredMigrateFundsExecution[];
+  legacyBalances: MigrationBalance[];
+  newBalances: MigrationBalance[];
+  v2OperatorApproved: boolean;
+}
+
+export interface RestoreMigrationOrderRequest {
+  legacyOrderId: number;
+  order: Record<string, unknown>;
+}
+
+export interface RestoreMigrationOrdersResult {
+  success: boolean;
+  restoredCount: number;
+  failedCount: number;
+  results: Array<
+    | {
+        legacyOrderId: number;
+        success: true;
+        restoredOrderId: number;
+        restoredOrderHash: Hex;
+      }
+    | {
+        legacyOrderId: number;
+        success: false;
+        error: string;
+      }
+  >;
+  settlementV2Address: Address;
+}

@@ -13,13 +13,13 @@ import type { HttpClient } from "../http.js";
 import { ENDPOINTS } from "../endpoints.js";
 import {
   type ChainConfig,
+  getHoldingsAddress,
+  getSettlementAddress,
   holdingsDomain,
-  permit2Domain,
   ERC20_ABI,
   HOLDINGS_ABI,
   SETTLEMENT_ABI,
   OPERATOR_APPROVAL_TYPES,
-  PERMIT_TRANSFER_FROM_TYPES,
   OPERATOR_NONCE_ABI,
 } from "../config.js";
 import { ContextConfigError } from "../errors.js";
@@ -30,8 +30,6 @@ import type {
   MintResult,
   GaslessOperatorRequest,
   GaslessOperatorResult,
-  GaslessDepositRequest,
-  GaslessDepositResult,
 } from "../types.js";
 import { validateMarketId } from "../validation.js";
 
@@ -81,7 +79,9 @@ export class AccountModule {
 
   async status(): Promise<AccountStatus> {
     const addr = this.address;
-    const { settlement, holdings, usdc } = this.chainConfig;
+    const settlement = getSettlementAddress(this.chainConfig);
+    const holdings = getHoldingsAddress(this.chainConfig);
+    const { usdc } = this.chainConfig;
     const [ethBalance, usdcBalance, usdcAllowance, isOperatorApproved] =
       await Promise.all([
         this.publicClient.getBalance({ address: addr }),
@@ -126,7 +126,8 @@ export class AccountModule {
   async approveUsdc(): Promise<Hex | null> {
     const wallet = this.requireWallet();
     const account = this.requireAccount();
-    const { viemChain, holdings, usdc } = this.chainConfig;
+    const { viemChain, usdc } = this.chainConfig;
+    const holdings = getHoldingsAddress(this.chainConfig);
     const status = await this.status();
     if (!status.needsUsdcApproval) return null;
 
@@ -147,7 +148,9 @@ export class AccountModule {
   async approveOperator(): Promise<Hex | null> {
     const wallet = this.requireWallet();
     const account = this.requireAccount();
-    const { viemChain, settlement, holdings } = this.chainConfig;
+    const { viemChain } = this.chainConfig;
+    const settlement = getSettlementAddress(this.chainConfig);
+    const holdings = getHoldingsAddress(this.chainConfig);
     const status = await this.status();
     if (!status.needsOperatorApproval) return null;
 
@@ -167,25 +170,10 @@ export class AccountModule {
   // ─── Chain-Aware Dispatchers ───
 
   async setup(): Promise<SetupResult> {
-    if (this.chain === "testnet") {
-      const result = await this.gaslessSetup();
-      return {
-        usdcApproval: { needed: false, txHash: null },
-        operatorApproval: { needed: true, txHash: result.txHash as Hex },
-      };
-    }
     return this.onchainSetup();
   }
 
   async deposit(amount: number): Promise<DepositResult> {
-    if (this.chain === "testnet") {
-      const result = await this.gaslessDeposit(amount);
-      return {
-        txHash: result.txHash as Hex,
-        amount: result.amount,
-        gasless: true,
-      };
-    }
     const amountRaw = parseUnits(amount.toString(), 6);
     const hash = await this.onchainDeposit(amount);
     return { txHash: hash, amount: amountRaw.toString(), gasless: false };
@@ -215,7 +203,8 @@ export class AccountModule {
   async onchainDeposit(amount: number): Promise<Hex> {
     const wallet = this.requireWallet();
     const account = this.requireAccount();
-    const { viemChain, holdings, usdc } = this.chainConfig;
+    const { viemChain, usdc } = this.chainConfig;
+    const holdings = getHoldingsAddress(this.chainConfig);
     const amountRaw = parseUnits(amount.toString(), 6);
 
     const hash = await wallet.writeContract({
@@ -234,7 +223,8 @@ export class AccountModule {
   async withdraw(amount: number): Promise<Hex> {
     const wallet = this.requireWallet();
     const account = this.requireAccount();
-    const { viemChain, holdings, usdc } = this.chainConfig;
+    const { viemChain, usdc } = this.chainConfig;
+    const holdings = getHoldingsAddress(this.chainConfig);
     const amountRaw = parseUnits(amount.toString(), 6);
 
     const hash = await wallet.writeContract({
@@ -260,7 +250,8 @@ export class AccountModule {
   async mintCompleteSets(marketId: string, amount: number): Promise<Hex> {
     const wallet = this.requireWallet();
     const account = this.requireAccount();
-    const { viemChain, settlement } = this.chainConfig;
+    const { viemChain } = this.chainConfig;
+    const settlement = getSettlementAddress(this.chainConfig);
     const amountRaw = parseUnits(amount.toString(), 6);
     const validatedMarketId = validateMarketId(marketId);
 
@@ -284,7 +275,8 @@ export class AccountModule {
   ): Promise<Hex> {
     const wallet = this.requireWallet();
     const account = this.requireAccount();
-    const { viemChain, settlement } = this.chainConfig;
+    const { viemChain } = this.chainConfig;
+    const settlement = getSettlementAddress(this.chainConfig);
     const amountRaw = parseUnits(amount.toString(), 6);
     const validatedMarketId = validateMarketId(marketId);
 
@@ -306,7 +298,9 @@ export class AccountModule {
   async gaslessSetup(): Promise<GaslessOperatorResult> {
     const wallet = this.requireWallet();
     const account = this.requireAccount();
-    const { settlement, holdings } = this.chainConfig;
+    const settlementVersion = this.chainConfig.defaultSettlementVersion;
+    const settlement = getSettlementAddress(this.chainConfig, settlementVersion);
+    const holdings = getHoldingsAddress(this.chainConfig, settlementVersion);
 
     const nonce = (await this.publicClient.readContract({
       address: holdings,
@@ -319,7 +313,7 @@ export class AccountModule {
 
     const signature = await wallet.signTypedData({
       account,
-      domain: holdingsDomain(this.chainConfig),
+      domain: holdingsDomain(this.chainConfig, settlementVersion),
       types: OPERATOR_APPROVAL_TYPES,
       primaryType: "OperatorApproval",
       message: {
@@ -333,6 +327,7 @@ export class AccountModule {
 
     return this.relayOperatorApproval({
       user: this.address,
+      settlementVersion,
       approved: true,
       nonce: nonce.toString(),
       deadline: deadline.toString(),
@@ -340,43 +335,10 @@ export class AccountModule {
     });
   }
 
-  async gaslessDeposit(amount: number): Promise<GaslessDepositResult> {
-    const wallet = this.requireWallet();
-    const account = this.requireAccount();
-    const { usdc, holdings } = this.chainConfig;
-    const amountRaw = parseUnits(amount.toString(), 6);
-
-    const bytes = new Uint8Array(8);
-    globalThis.crypto.getRandomValues(bytes);
-    const nonce = bytes.reduce(
-      (acc, byte, index) => acc | (BigInt(byte) << BigInt(index * 8)),
-      0n,
+  async gaslessDeposit(_amount: number): Promise<never> {
+    throw new ContextConfigError(
+      "gaslessDeposit() is currently unavailable. Use onchain deposit() instead.",
     );
-    const deadline = BigInt(Math.floor(Date.now() / 1000) + 3600);
-
-    const signature = await wallet.signTypedData({
-      account,
-      domain: permit2Domain(this.chainConfig),
-      types: PERMIT_TRANSFER_FROM_TYPES,
-      primaryType: "PermitTransferFrom",
-      message: {
-        permitted: {
-          token: usdc,
-          amount: amountRaw,
-        },
-        spender: holdings,
-        nonce,
-        deadline,
-      },
-    });
-
-    return this.relayDeposit({
-      user: this.address,
-      amount: amountRaw.toString(),
-      nonce: nonce.toString(),
-      deadline: deadline.toString(),
-      signature,
-    });
   }
 
   // ─── Gasless Relay (low-level) ───
@@ -390,12 +352,9 @@ export class AccountModule {
     );
   }
 
-  async relayDeposit(
-    req: GaslessDepositRequest,
-  ): Promise<GaslessDepositResult> {
-    return this.http.post<GaslessDepositResult>(
-      ENDPOINTS.gasless.depositWithPermit,
-      req,
+  async relayDeposit(): Promise<never> {
+    throw new ContextConfigError(
+      "relayDeposit() is currently unavailable because /gasless/deposit-with-permit is disabled.",
     );
   }
 
@@ -404,7 +363,8 @@ export class AccountModule {
   private async approveUsdcUnchecked(): Promise<Hex> {
     const wallet = this.requireWallet();
     const account = this.requireAccount();
-    const { viemChain, holdings, usdc } = this.chainConfig;
+    const { viemChain, usdc } = this.chainConfig;
+    const holdings = getHoldingsAddress(this.chainConfig);
 
     const hash = await wallet.writeContract({
       account,
@@ -422,7 +382,9 @@ export class AccountModule {
   private async approveOperatorUnchecked(): Promise<Hex> {
     const wallet = this.requireWallet();
     const account = this.requireAccount();
-    const { viemChain, settlement, holdings } = this.chainConfig;
+    const { viemChain } = this.chainConfig;
+    const settlement = getSettlementAddress(this.chainConfig);
+    const holdings = getHoldingsAddress(this.chainConfig);
 
     const hash = await wallet.writeContract({
       account,

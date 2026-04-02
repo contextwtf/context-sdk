@@ -28,13 +28,6 @@ async function main() {
   const market = markets[0];
   console.log(`\n--- Market: ${market.question} ---`);
 
-  // Get quotes
-  console.log("\nQuotes:");
-  const quotes = await ctx.markets.quotes(market.id);
-  console.log(`  YES: bid=${quotes.yes.bid}¢ ask=${quotes.yes.ask}¢ last=${quotes.yes.last}¢`);
-  console.log(`  NO:  bid=${quotes.no.bid}¢ ask=${quotes.no.ask}¢ last=${quotes.no.last}¢`);
-  console.log(`  Spread: ${quotes.spread}¢`);
-
   // Get orderbook
   console.log("\nOrderbook:");
   const book = await ctx.markets.orderbook(market.id);

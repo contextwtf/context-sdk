@@ -105,11 +105,6 @@ describe("Markets module", () => {
     expect(result).toEqual(mockMarket);
   });
 
-  it("quotes() calls GET /markets/:id/quotes", async () => {
-    await markets.quotes("m1");
-    expect(http.get).toHaveBeenCalledWith("/markets/m1/quotes");
-  });
-
   it("orderbook() calls GET /markets/:id/orderbook with params", async () => {
     await markets.orderbook("m1", { depth: 5, outcomeIndex: 1 });
     expect(http.get).toHaveBeenCalledWith("/markets/m1/orderbook", {
@@ -173,17 +168,6 @@ describe("Markets module", () => {
   it("oracle() calls GET /markets/:id/oracle", async () => {
     await markets.oracle("m1");
     expect(http.get).toHaveBeenCalledWith("/markets/m1/oracle");
-  });
-
-  it("oracleQuotes() calls GET /markets/:id/oracle/quotes", async () => {
-    (http.get as any).mockResolvedValue({ quotes: [] });
-    await markets.oracleQuotes("m1");
-    expect(http.get).toHaveBeenCalledWith("/markets/m1/oracle/quotes");
-  });
-
-  it("requestOracleQuote() calls POST /markets/:id/oracle/quotes", async () => {
-    await markets.requestOracleQuote("m1");
-    expect(http.post).toHaveBeenCalledWith("/markets/m1/oracle/quotes", {});
   });
 
   it("activity() calls GET /markets/:id/activity with params and returns full response", async () => {
