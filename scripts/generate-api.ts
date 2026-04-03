@@ -56,7 +56,6 @@ const KEY_OVERRIDES: Record<string, string> = {
 
   // gasless
   "/gasless/operator": "operator",
-  "/gasless/deposit-with-permit": "depositWithPermit",
 };
 
 // ---------------------------------------------------------------------------

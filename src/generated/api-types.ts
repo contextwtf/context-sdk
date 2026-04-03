@@ -561,23 +561,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/gasless/deposit-with-permit": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Relay depositWithPermit */
-        post: operations["depositPublicV2GaslessWithPermit"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/questions": {
         parameters: {
             query?: never;
@@ -785,11 +768,14 @@ export interface components {
              * @example 1000000
              */
             maxFee: string;
+            /** @description Time in force. `0` = good-till-cancelled (GTC), `1` = immediate-or-cancel (IOC), `2` = fill-or-kill (FOK). */
             timeInForce?: 0 | 1 | 2;
             /** @enum {string} */
             clientOrderType?: "limit" | "market";
-            makerRoleConstraint: number;
-            inventoryModeConstraint: number;
+            /** @description Constraint enum. `0` = any, `1` = yes, `2` = no / no-inventory depending on the field. */
+            makerRoleConstraint: 0 | 1 | 2;
+            /** @description Constraint enum. `0` = any, `1` = yes, `2` = no / no-inventory depending on the field. */
+            inventoryModeConstraint: 0 | 1 | 2;
             reason: string;
         };
         SponsoredFundsMigrationStatus: {
@@ -832,12 +818,50 @@ export interface components {
             }[];
             legacyOpenOrderCount: number;
         };
+        PublicStartMigrationBody: {
+            /**
+             * @description Optional wallet address override for SDK/API flows. When omitted, the server uses the authenticated API account wallet.
+             * @example 0x1111111111111111111111111111111111111111
+             */
+            address?: string;
+            /** @description Required when `address` overrides the authenticated API account wallet. The requested wallet must sign the public migration authorization message. */
+            authorization?: {
+                /**
+                 * @description Integer encoded as decimal string
+                 * @example 1000000
+                 */
+                deadline: string;
+                /**
+                 * @description Hex string
+                 * @example 0xabc123
+                 */
+                signature: string;
+            };
+        };
         DismissMigrationOrdersResponse: {
             /** @enum {boolean} */
             success: true;
             dismissedCount: number;
         };
-        DismissMigrationOrdersBody: {
+        PublicDismissMigrationOrdersBody: {
+            /**
+             * @description Optional wallet address override for SDK/API flows. When omitted, the server uses the authenticated API account wallet.
+             * @example 0x1111111111111111111111111111111111111111
+             */
+            address?: string;
+            /** @description Required when `address` overrides the authenticated API account wallet. The requested wallet must sign the public migration authorization message. */
+            authorization?: {
+                /**
+                 * @description Integer encoded as decimal string
+                 * @example 1000000
+                 */
+                deadline: string;
+                /**
+                 * @description Hex string
+                 * @example 0xabc123
+                 */
+                signature: string;
+            };
             legacyOrderIds?: number[];
         };
         RestoreMigrationOrdersResponse: {
@@ -867,7 +891,12 @@ export interface components {
             success: false;
             error: string;
         };
-        RestoreMigrationOrdersBody: {
+        PublicRestoreMigrationOrdersBody: {
+            /**
+             * @description Optional wallet address override for SDK/API flows. When omitted, the server uses the authenticated API account wallet.
+             * @example 0x1111111111111111111111111111111111111111
+             */
+            address?: string;
             restorations: {
                 legacyOrderId: number;
                 order: components["schemas"]["PublicCreateOrderBody"];
@@ -892,12 +921,12 @@ export interface components {
              */
             price: string;
             /**
-             * @description Integer encoded as decimal string
+             * @description Requested share size in 6-decimal fixed-point units. The API accepts this high-level limit-order shape and maps it to the current settlement model after migration.
              * @example 1000000
              */
             size: string;
             /**
-             * @description Integer encoded as decimal string
+             * @description Optional pre-fee collateral budget for buy orders, in 6-decimal fixed-point units. The normalized SettlementV2 collateral cap adds `maxFee` on top of this value.
              * @example 1000000
              */
             buyValue?: string;
@@ -918,11 +947,17 @@ export interface components {
              * @example 1000000
              */
             maxFee: string;
+            /** @description Optional time-in-force override for the normalized SettlementV2 order. When omitted, the server uses good-till-cancelled (GTC). */
             timeInForce?: 0 | 1 | 2;
-            /** @enum {string} */
+            /**
+             * @description Optional client-side intent label preserved by the API. This does not change signature verification.
+             * @enum {string}
+             */
             clientOrderType?: "limit" | "market";
-            makerRoleConstraint: number;
-            inventoryModeConstraint: number;
+            /** @description Constraint enum. `0` = any, `1` = yes, `2` = no / no-inventory depending on the field. */
+            makerRoleConstraint: 0 | 1 | 2;
+            /** @description Constraint enum. `0` = any, `1` = yes, `2` = no / no-inventory depending on the field. */
+            inventoryModeConstraint: 0 | 1 | 2;
             /**
              * @description Hex string
              * @example 0xabc123
@@ -942,12 +977,12 @@ export interface components {
              */
             trader: string;
             /**
-             * @description Integer encoded as decimal string
+             * @description Worst acceptable execution price in 6-decimal fixed-point units.
              * @example 1000000
              */
             maxPrice: string;
             /**
-             * @description Integer encoded as decimal string
+             * @description Requested market-order amount in the existing public API shape. The server maps accepted market inputs to the current execution model.
              * @example 1000000
              */
             maxSize: string;
@@ -1004,7 +1039,12 @@ export interface components {
              */
             txHash: string;
         };
-        SponsoredMigrateFundsBody: {
+        PublicSponsoredMigrateFundsBody: {
+            /**
+             * @description Optional wallet address override for SDK/API flows. When omitted, the server uses the authenticated API account wallet.
+             * @example 0x1111111111111111111111111111111111111111
+             */
+            address?: string;
             batchWithdraw: {
                 /**
                  * @description Integer encoded as decimal string
@@ -1040,6 +1080,11 @@ export interface components {
                 signature: string;
             };
         } | {
+            /**
+             * @description Optional wallet address override for SDK/API flows. When omitted, the server uses the authenticated API account wallet.
+             * @example 0x1111111111111111111111111111111111111111
+             */
+            address?: string;
             chunks: {
                 batchWithdraw: {
                     /**
@@ -1422,21 +1467,24 @@ export interface components {
              * @example 1000000
              */
             expiry: string;
+            /** @description Settlement family. `1` = legacy settlement. `2` = the post-migration settlement used for new orders. */
             settlementVersion: 1 | 2;
+            /** @description Normalized SettlementV2 order kind for this stored order. Null for legacy orders. */
             sv2OrderKind: 0 | 1 | 2 | unknown;
+            /** @description Normalized SettlementV2 time in force for this stored order. Null for legacy orders. */
             sv2TimeInForce: 0 | 1 | 2 | unknown;
             /**
-             * @description Integer encoded as decimal string
+             * @description SettlementV2 normalized minimum shares-out constraint. Set for buy orders, otherwise `null`.
              * @example 1000000
              */
             sv2MinSharesOut: string | null;
             /**
-             * @description Integer encoded as decimal string
+             * @description SettlementV2 normalized maximum collateral-in cap. For buys and sell-no-inventory orders this is an all-in cap including `maxFee`.
              * @example 1000000
              */
             sv2MaxCollateralIn: string | null;
             /**
-             * @description Integer encoded as decimal string
+             * @description SettlementV2 normalized minimum collateral-out floor. For sell-from-inventory orders this is net of `maxFee`.
              * @example 1000000
              */
             sv2MinCollateralOut: string | null;
@@ -2027,7 +2075,10 @@ export type $defs = Record<string, never>;
 export interface operations {
     getPublicV2AccountMigration: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Optional wallet address override for SDK/API flows. When omitted, the server uses the authenticated API account wallet. */
+                address?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -2106,7 +2157,12 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                /** @example {} */
+                "application/json": components["schemas"]["PublicStartMigrationBody"];
+            };
+        };
         responses: {
             /** @description Migration started */
             200: {
@@ -2191,7 +2247,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["DismissMigrationOrdersBody"];
+                "application/json": components["schemas"]["PublicDismissMigrationOrdersBody"];
             };
         };
         responses: {
@@ -2278,7 +2334,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["RestoreMigrationOrdersBody"];
+                "application/json": components["schemas"]["PublicRestoreMigrationOrdersBody"];
             };
         };
         responses: {
@@ -2365,7 +2421,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["SponsoredMigrateFundsBody"];
+                "application/json": components["schemas"]["PublicSponsoredMigrateFundsBody"];
             };
         };
         responses: {
@@ -4661,6 +4717,7 @@ export interface operations {
                      * @example 0x1111111111111111111111111111111111111111
                      */
                     user: string;
+                    /** @description Settlement family. `1` = legacy settlement. `2` = the post-migration settlement used for new orders. */
                     settlementVersion?: 1 | 2;
                     /** @default true */
                     approved?: boolean;
@@ -4743,115 +4800,6 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["PublicApiError"];
-                };
-            };
-        };
-    };
-    depositPublicV2GaslessWithPermit: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": {
-                    /**
-                     * @description EVM address
-                     * @example 0x1111111111111111111111111111111111111111
-                     */
-                    user: string;
-                    /**
-                     * @description Integer encoded as decimal string
-                     * @example 1000000
-                     */
-                    amount: string;
-                    /**
-                     * @description Integer encoded as decimal string
-                     * @example 1000000
-                     */
-                    nonce: string;
-                    /**
-                     * @description Integer encoded as decimal string
-                     * @example 1000000
-                     */
-                    deadline: string;
-                    /**
-                     * @description Hex string
-                     * @example 0xabc123
-                     */
-                    signature: string;
-                };
-            };
-        };
-        responses: {
-            /** @description Bad request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PublicApiError"];
-                };
-            };
-            /** @description Unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PublicApiError"];
-                };
-            };
-            /** @description Forbidden */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PublicApiError"];
-                };
-            };
-            /** @description Not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PublicApiError"];
-                };
-            };
-            /** @description Rate limited */
-            429: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PublicApiError"];
-                };
-            };
-            /** @description Internal server error */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PublicApiError"];
-                };
-            };
-            /** @description Endpoint temporarily disabled */
-            503: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    /**
-                     * @example {
-                     *       "message": "This endpoint is temporarily disabled. Use holdings.deposit() directly."
-                     *     }
-                     */
                     "application/json": components["schemas"]["PublicApiError"];
                 };
             };

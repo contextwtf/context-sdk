@@ -438,7 +438,8 @@
                   2
                 ]
               }
-            ]
+            ],
+            "description": "Time in force. `0` = good-till-cancelled (GTC), `1` = immediate-or-cancel (IOC), `2` = fill-or-kill (FOK)."
           },
           "clientOrderType": {
             "type": "string",
@@ -448,14 +449,50 @@
             ]
           },
           "makerRoleConstraint": {
-            "type": "integer",
-            "minimum": 0,
-            "maximum": 2
+            "anyOf": [
+              {
+                "type": "number",
+                "enum": [
+                  0
+                ]
+              },
+              {
+                "type": "number",
+                "enum": [
+                  1
+                ]
+              },
+              {
+                "type": "number",
+                "enum": [
+                  2
+                ]
+              }
+            ],
+            "description": "Constraint enum. `0` = any, `1` = yes, `2` = no / no-inventory depending on the field."
           },
           "inventoryModeConstraint": {
-            "type": "integer",
-            "minimum": 0,
-            "maximum": 2
+            "anyOf": [
+              {
+                "type": "number",
+                "enum": [
+                  0
+                ]
+              },
+              {
+                "type": "number",
+                "enum": [
+                  1
+                ]
+              },
+              {
+                "type": "number",
+                "enum": [
+                  2
+                ]
+              }
+            ],
+            "description": "Constraint enum. `0` = any, `1` = yes, `2` = no / no-inventory depending on the field."
           },
           "reason": {
             "type": "string"
@@ -598,6 +635,39 @@
           "legacyOpenOrderCount"
         ]
       },
+      "PublicStartMigrationBody": {
+        "type": "object",
+        "properties": {
+          "address": {
+            "type": "string",
+            "pattern": "^0x[a-fA-F0-9]{40}$",
+            "description": "Optional wallet address override for SDK/API flows. When omitted, the server uses the authenticated API account wallet.",
+            "example": "0x1111111111111111111111111111111111111111"
+          },
+          "authorization": {
+            "type": "object",
+            "properties": {
+              "deadline": {
+                "type": "string",
+                "pattern": "^\\d+$",
+                "description": "Integer encoded as decimal string",
+                "example": "1000000"
+              },
+              "signature": {
+                "type": "string",
+                "pattern": "^0x[a-fA-F0-9]*$",
+                "description": "Hex string",
+                "example": "0xabc123"
+              }
+            },
+            "required": [
+              "deadline",
+              "signature"
+            ],
+            "description": "Required when `address` overrides the authenticated API account wallet. The requested wallet must sign the public migration authorization message."
+          }
+        }
+      },
       "DismissMigrationOrdersResponse": {
         "type": "object",
         "properties": {
@@ -616,9 +686,37 @@
           "dismissedCount"
         ]
       },
-      "DismissMigrationOrdersBody": {
+      "PublicDismissMigrationOrdersBody": {
         "type": "object",
         "properties": {
+          "address": {
+            "type": "string",
+            "pattern": "^0x[a-fA-F0-9]{40}$",
+            "description": "Optional wallet address override for SDK/API flows. When omitted, the server uses the authenticated API account wallet.",
+            "example": "0x1111111111111111111111111111111111111111"
+          },
+          "authorization": {
+            "type": "object",
+            "properties": {
+              "deadline": {
+                "type": "string",
+                "pattern": "^\\d+$",
+                "description": "Integer encoded as decimal string",
+                "example": "1000000"
+              },
+              "signature": {
+                "type": "string",
+                "pattern": "^0x[a-fA-F0-9]*$",
+                "description": "Hex string",
+                "example": "0xabc123"
+              }
+            },
+            "required": [
+              "deadline",
+              "signature"
+            ],
+            "description": "Required when `address` overrides the authenticated API account wallet. The requested wallet must sign the public migration authorization message."
+          },
           "legacyOrderIds": {
             "type": "array",
             "items": {
@@ -717,9 +815,15 @@
           }
         ]
       },
-      "RestoreMigrationOrdersBody": {
+      "PublicRestoreMigrationOrdersBody": {
         "type": "object",
         "properties": {
+          "address": {
+            "type": "string",
+            "pattern": "^0x[a-fA-F0-9]{40}$",
+            "description": "Optional wallet address override for SDK/API flows. When omitted, the server uses the authenticated API account wallet.",
+            "example": "0x1111111111111111111111111111111111111111"
+          },
           "restorations": {
             "type": "array",
             "items": {
@@ -779,13 +883,13 @@
               "size": {
                 "type": "string",
                 "pattern": "^\\d+$",
-                "description": "Integer encoded as decimal string",
+                "description": "Requested share size in 6-decimal fixed-point units. The API accepts this high-level limit-order shape and maps it to the current settlement model after migration.",
                 "example": "1000000"
               },
               "buyValue": {
                 "type": "string",
                 "pattern": "^\\d+$",
-                "description": "Integer encoded as decimal string",
+                "description": "Optional pre-fee collateral budget for buy orders, in 6-decimal fixed-point units. The normalized SettlementV2 collateral cap adds `maxFee` on top of this value.",
                 "example": "1000000"
               },
               "outcomeIndex": {
@@ -845,24 +949,62 @@
                       2
                     ]
                   }
-                ]
+                ],
+                "description": "Optional time-in-force override for the normalized SettlementV2 order. When omitted, the server uses good-till-cancelled (GTC)."
               },
               "clientOrderType": {
                 "type": "string",
                 "enum": [
                   "limit",
                   "market"
-                ]
+                ],
+                "description": "Optional client-side intent label preserved by the API. This does not change signature verification."
               },
               "makerRoleConstraint": {
-                "type": "integer",
-                "minimum": 0,
-                "maximum": 2
+                "anyOf": [
+                  {
+                    "type": "number",
+                    "enum": [
+                      0
+                    ]
+                  },
+                  {
+                    "type": "number",
+                    "enum": [
+                      1
+                    ]
+                  },
+                  {
+                    "type": "number",
+                    "enum": [
+                      2
+                    ]
+                  }
+                ],
+                "description": "Constraint enum. `0` = any, `1` = yes, `2` = no / no-inventory depending on the field."
               },
               "inventoryModeConstraint": {
-                "type": "integer",
-                "minimum": 0,
-                "maximum": 2
+                "anyOf": [
+                  {
+                    "type": "number",
+                    "enum": [
+                      0
+                    ]
+                  },
+                  {
+                    "type": "number",
+                    "enum": [
+                      1
+                    ]
+                  },
+                  {
+                    "type": "number",
+                    "enum": [
+                      2
+                    ]
+                  }
+                ],
+                "description": "Constraint enum. `0` = any, `1` = yes, `2` = no / no-inventory depending on the field."
               },
               "signature": {
                 "type": "string",
@@ -911,13 +1053,13 @@
               "maxPrice": {
                 "type": "string",
                 "pattern": "^\\d+$",
-                "description": "Integer encoded as decimal string",
+                "description": "Worst acceptable execution price in 6-decimal fixed-point units.",
                 "example": "1000000"
               },
               "maxSize": {
                 "type": "string",
                 "pattern": "^\\d+$",
-                "description": "Integer encoded as decimal string",
+                "description": "Requested market-order amount in the existing public API shape. The server maps accepted market inputs to the current execution model.",
                 "example": "1000000"
               },
               "outcomeIndex": {
@@ -1054,11 +1196,17 @@
           "txHash"
         ]
       },
-      "SponsoredMigrateFundsBody": {
+      "PublicSponsoredMigrateFundsBody": {
         "anyOf": [
           {
             "type": "object",
             "properties": {
+              "address": {
+                "type": "string",
+                "pattern": "^0x[a-fA-F0-9]{40}$",
+                "description": "Optional wallet address override for SDK/API flows. When omitted, the server uses the authenticated API account wallet.",
+                "example": "0x1111111111111111111111111111111111111111"
+              },
               "batchWithdraw": {
                 "type": "object",
                 "properties": {
@@ -1124,6 +1272,12 @@
           {
             "type": "object",
             "properties": {
+              "address": {
+                "type": "string",
+                "pattern": "^0x[a-fA-F0-9]{40}$",
+                "description": "Optional wallet address override for SDK/API flows. When omitted, the server uses the authenticated API account wallet.",
+                "example": "0x1111111111111111111111111111111111111111"
+              },
               "chunks": {
                 "type": "array",
                 "items": {
@@ -2284,7 +2438,8 @@
                   2
                 ]
               }
-            ]
+            ],
+            "description": "Settlement family. `1` = legacy settlement. `2` = the post-migration settlement used for new orders."
           },
           "sv2OrderKind": {
             "anyOf": [
@@ -2309,7 +2464,8 @@
               {
                 "nullable": true
               }
-            ]
+            ],
+            "description": "Normalized SettlementV2 order kind for this stored order. Null for legacy orders."
           },
           "sv2TimeInForce": {
             "anyOf": [
@@ -2334,27 +2490,28 @@
               {
                 "nullable": true
               }
-            ]
+            ],
+            "description": "Normalized SettlementV2 time in force for this stored order. Null for legacy orders."
           },
           "sv2MinSharesOut": {
             "type": "string",
             "nullable": true,
             "pattern": "^\\d+$",
-            "description": "Integer encoded as decimal string",
+            "description": "SettlementV2 normalized minimum shares-out constraint. Set for buy orders, otherwise `null`.",
             "example": "1000000"
           },
           "sv2MaxCollateralIn": {
             "type": "string",
             "nullable": true,
             "pattern": "^\\d+$",
-            "description": "Integer encoded as decimal string",
+            "description": "SettlementV2 normalized maximum collateral-in cap. For buys and sell-no-inventory orders this is an all-in cap including `maxFee`.",
             "example": "1000000"
           },
           "sv2MinCollateralOut": {
             "type": "string",
             "nullable": true,
             "pattern": "^\\d+$",
-            "description": "Integer encoded as decimal string",
+            "description": "SettlementV2 normalized minimum collateral-out floor. For sell-from-inventory orders this is net of `maxFee`.",
             "example": "1000000"
           }
         },
@@ -3793,6 +3950,20 @@
             "apiKey": []
           }
         ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^0x[a-fA-F0-9]{40}$",
+              "description": "Optional wallet address override for SDK/API flows. When omitted, the server uses the authenticated API account wallet.",
+              "example": "0x1111111111111111111111111111111111111111"
+            },
+            "required": false,
+            "description": "Optional wallet address override for SDK/API flows. When omitted, the server uses the authenticated API account wallet.",
+            "name": "address",
+            "in": "query"
+          }
+        ],
         "responses": {
           "200": {
             "description": "Migration status",
@@ -3879,6 +4050,17 @@
             "apiKey": []
           }
         ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PublicStartMigrationBody"
+              },
+              "example": {}
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "Migration started",
@@ -3980,7 +4162,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/DismissMigrationOrdersBody"
+                "$ref": "#/components/schemas/PublicDismissMigrationOrdersBody"
               }
             }
           }
@@ -4086,7 +4268,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/RestoreMigrationOrdersBody"
+                "$ref": "#/components/schemas/PublicRestoreMigrationOrdersBody"
               }
             }
           }
@@ -4192,7 +4374,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/SponsoredMigrateFundsBody"
+                "$ref": "#/components/schemas/PublicSponsoredMigrateFundsBody"
               }
             }
           }
@@ -6138,7 +6320,7 @@
                   "operations": {
                     "type": "array",
                     "items": {
-                      "anyOf": [
+                      "oneOf": [
                         {
                           "type": "object",
                           "properties": {
@@ -7690,7 +7872,8 @@
                           2
                         ]
                       }
-                    ]
+                    ],
+                    "description": "Settlement family. `1` = legacy settlement. `2` = the post-migration settlement used for new orders."
                   },
                   "approved": {
                     "type": "boolean",
@@ -7792,144 +7975,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/PublicApiError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/gasless/deposit-with-permit": {
-      "post": {
-        "summary": "Relay depositWithPermit",
-        "operationId": "depositPublicV2GaslessWithPermit",
-        "tags": [
-          "Gasless"
-        ],
-        "security": [
-          {
-            "apiKey": []
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "user": {
-                    "type": "string",
-                    "pattern": "^0x[a-fA-F0-9]{40}$",
-                    "description": "EVM address",
-                    "example": "0x1111111111111111111111111111111111111111"
-                  },
-                  "amount": {
-                    "type": "string",
-                    "pattern": "^\\d+$",
-                    "description": "Integer encoded as decimal string",
-                    "example": "1000000"
-                  },
-                  "nonce": {
-                    "type": "string",
-                    "pattern": "^\\d+$",
-                    "description": "Integer encoded as decimal string",
-                    "example": "1000000"
-                  },
-                  "deadline": {
-                    "type": "string",
-                    "pattern": "^\\d+$",
-                    "description": "Integer encoded as decimal string",
-                    "example": "1000000"
-                  },
-                  "signature": {
-                    "type": "string",
-                    "pattern": "^0x[a-fA-F0-9]*$",
-                    "description": "Hex string",
-                    "example": "0xabc123"
-                  }
-                },
-                "required": [
-                  "user",
-                  "amount",
-                  "nonce",
-                  "deadline",
-                  "signature"
-                ]
-              }
-            }
-          }
-        },
-        "responses": {
-          "400": {
-            "description": "Bad request",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PublicApiError"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Unauthorized",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PublicApiError"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Forbidden",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PublicApiError"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Not found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PublicApiError"
-                }
-              }
-            }
-          },
-          "429": {
-            "description": "Rate limited",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PublicApiError"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Internal server error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PublicApiError"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "Endpoint temporarily disabled",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PublicApiError"
-                },
-                "example": {
-                  "message": "This endpoint is temporarily disabled. Use holdings.deposit() directly."
                 }
               }
             }

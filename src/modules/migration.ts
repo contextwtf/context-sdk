@@ -9,14 +9,20 @@ import {
   signSetOperatorApproval,
 } from "../signing/eip712.js";
 import type {
+  MigrationAddressRequest,
   DismissMigrationOrdersRequest,
   DismissMigrationOrdersResult,
+  MigrationAuthorizationAction,
   MigrationStatus,
   PendingMigrationRestoration,
+  PublicAddressAuthorization,
+  RestoreMigrationOrdersRequest,
   RestoreMigrationOrdersResult,
   SignedMigrationAction,
+  SignMigrationAddressAuthorizationRequest,
   SponsoredMigrateFundsRequest,
   SponsoredMigrateFundsResult,
+  StartMigrationRequest,
   StartMigrationResult,
 } from "../types.js";
 import type { ChainConfig } from "../config.js";
@@ -29,6 +35,33 @@ const generateRandomUint128 = () => {
   return bytes.reduce((acc, byte) => (acc << 8n) | BigInt(byte), 0n);
 };
 
+const sortLegacyOrderIds = (legacyOrderIds?: number[]) =>
+  legacyOrderIds ? [...legacyOrderIds].sort((left, right) => left - right) : [];
+
+const buildPublicMigrationAuthorizationMessage = ({
+  action,
+  walletAddress,
+  deadline,
+  legacyOrderIds,
+}: {
+  action: MigrationAuthorizationAction;
+  walletAddress: Address;
+  deadline: bigint;
+  legacyOrderIds?: number[];
+}) => {
+  const sortedLegacyOrderIds = sortLegacyOrderIds(legacyOrderIds);
+
+  return [
+    "Context public API migration authorization",
+    `Action: ${action}`,
+    `Wallet: ${walletAddress.toLowerCase()}`,
+    `Legacy order ids: ${
+      sortedLegacyOrderIds.length > 0 ? sortedLegacyOrderIds.join(",") : "all"
+    }`,
+    `Deadline: ${deadline.toString()}`,
+  ].join("\n");
+};
+
 export class MigrationModule {
   constructor(
     private readonly http: HttpClient,
@@ -38,6 +71,17 @@ export class MigrationModule {
     private readonly address: Address | null,
     private readonly chainConfig: ChainConfig,
   ) {}
+
+  private withAddress<T extends MigrationAddressRequest>(request?: T): T | undefined {
+    if (request?.address || !this.address) {
+      return request;
+    }
+
+    return {
+      ...request,
+      address: this.address,
+    } as T;
+  }
 
   private requireSigner() {
     if (!this.builder || !this.walletClient || !this.account || !this.address) {
@@ -54,23 +98,49 @@ export class MigrationModule {
     };
   }
 
-  async getStatus(): Promise<MigrationStatus> {
-    return this.http.get<MigrationStatus>(ENDPOINTS.account.migration);
+  async getStatus(
+    request?: MigrationAddressRequest,
+  ): Promise<MigrationStatus> {
+    const resolved = this.withAddress(request);
+    return this.http.get<MigrationStatus>(
+      ENDPOINTS.account.migration,
+      resolved?.address ? { address: resolved.address } : undefined,
+    );
   }
 
-  async start(): Promise<StartMigrationResult> {
+  async start(
+    request: StartMigrationRequest = {},
+  ): Promise<StartMigrationResult> {
+    const resolved = this.withAddress(request);
+    if (resolved?.authorization && !resolved.address) {
+      throw new ContextConfigError(
+        "Migration address authorization requires an explicit address override.",
+      );
+    }
+
     return this.http.post<StartMigrationResult>(
       ENDPOINTS.account.migrationStart,
-      {},
+      resolved?.address ? resolved : {},
     );
   }
 
   async dismissOrders(
     request: DismissMigrationOrdersRequest = {},
   ): Promise<DismissMigrationOrdersResult> {
+    const resolved = this.withAddress(request);
+    if (resolved?.authorization && !resolved.address) {
+      throw new ContextConfigError(
+        "Migration address authorization requires an explicit address override.",
+      );
+    }
+
     return this.http.post<DismissMigrationOrdersResult>(
       ENDPOINTS.account.migrationDismissOrders,
-      request,
+      resolved?.address
+        ? resolved
+        : request.legacyOrderIds
+          ? { legacyOrderIds: request.legacyOrderIds }
+          : {},
     );
   }
 
@@ -79,19 +149,16 @@ export class MigrationModule {
   ): Promise<SponsoredMigrateFundsResult> {
     return this.http.post<SponsoredMigrateFundsResult>(
       ENDPOINTS.account.migrationMigrateFunds,
-      request,
+      this.withAddress(request) ?? request,
     );
   }
 
-  async restoreOrders(request: {
-    restorations: Array<{
-      legacyOrderId: number;
-      order: Record<string, unknown>;
-    }>;
-  }): Promise<RestoreMigrationOrdersResult> {
+  async restoreOrders(
+    request: RestoreMigrationOrdersRequest,
+  ): Promise<RestoreMigrationOrdersResult> {
     return this.http.post<RestoreMigrationOrdersResult>(
       ENDPOINTS.account.migrationRestoreOrders,
-      request,
+      this.withAddress(request) ?? request,
     );
   }
 
@@ -99,7 +166,8 @@ export class MigrationModule {
     status?: MigrationStatus,
   ): Promise<SponsoredMigrateFundsRequest> {
     const signer = this.requireSigner();
-    const migration = status ?? (await this.getStatus());
+    const migration =
+      status ?? (await this.getStatus({ address: signer.address }));
 
     if (!migration.sponsoredFundsMigrationAvailable) {
       throw new ContextConfigError(
@@ -195,6 +263,35 @@ export class MigrationModule {
     };
   }
 
+  async signAddressAuthorization({
+    action,
+    address,
+    legacyOrderIds,
+    deadline,
+  }: SignMigrationAddressAuthorizationRequest): Promise<PublicAddressAuthorization> {
+    const signer = this.requireSigner();
+    const walletAddress = address ?? signer.address;
+    const resolvedDeadline =
+      deadline == null
+        ? BigInt(Math.floor(Date.now() / 1000)) + DEFAULT_SIGNATURE_TTL_SECONDS
+        : BigInt(deadline);
+    const message = buildPublicMigrationAuthorizationMessage({
+      action,
+      walletAddress,
+      deadline: resolvedDeadline,
+      legacyOrderIds,
+    });
+    const signature = await signer.walletClient.signMessage({
+      account: signer.account,
+      message,
+    });
+
+    return {
+      deadline: resolvedDeadline.toString(),
+      signature,
+    };
+  }
+
   private mapDraftToSdkOrder(
     restoration: PendingMigrationRestoration,
   ) {
@@ -240,16 +337,14 @@ export class MigrationModule {
 
   async buildRestoreOrdersBody(
     restorations?: PendingMigrationRestoration[],
-  ): Promise<{
-    restorations: Array<{
-      legacyOrderId: number;
-      order: Record<string, unknown>;
-    }>;
-  }> {
-    const migration = restorations ? null : await this.getStatus();
+  ): Promise<RestoreMigrationOrdersRequest> {
+    const migration = restorations
+      ? null
+      : await this.getStatus(this.address ? { address: this.address } : undefined);
     const pending = restorations ?? migration?.pendingRestorations ?? [];
 
     return {
+      ...(this.address ? { address: this.address } : {}),
       restorations: await Promise.all(
         pending.map((restoration) => this.signRestoreOrder(restoration)),
       ),

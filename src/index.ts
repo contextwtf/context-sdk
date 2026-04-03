@@ -168,6 +168,11 @@ export type {
   PendingMigrationRestoration,
   SponsoredFundsMigrationStatus,
   MigrationStatus,
+  MigrationAddressRequest,
+  MigrationAuthorizationAction,
+  PublicAddressAuthorization,
+  SignMigrationAddressAuthorizationRequest,
+  StartMigrationRequest,
   StartMigrationResult,
   DismissMigrationOrdersRequest,
   DismissMigrationOrdersResult,
@@ -176,6 +181,7 @@ export type {
   SponsoredMigrateFundsExecution,
   SponsoredMigrateFundsResult,
   RestoreMigrationOrderRequest,
+  RestoreMigrationOrdersRequest,
   RestoreMigrationOrdersResult,
 } from "./types.js";
 

@@ -152,11 +152,173 @@ describe("MigrationModule", () => {
     await module.start();
     await module.dismissOrders({ legacyOrderIds: [1, 2] });
 
-    expect(http.get).toHaveBeenCalledWith("/account/migration");
+    expect(http.get).toHaveBeenCalledWith("/account/migration", undefined);
     expect(http.post).toHaveBeenCalledWith("/account/migration/start", {});
     expect(http.post).toHaveBeenCalledWith(
       "/account/migration/dismiss-orders",
       { legacyOrderIds: [1, 2] },
+    );
+  });
+
+  it("uses the signer address for public migration routes by default", async () => {
+    const http = createMockHttp();
+    const builder = createMockBuilder();
+    const walletClient = createMockWalletClient();
+    const module = new MigrationModule(
+      http,
+      builder,
+      walletClient,
+      ACCOUNT,
+      ADDRESS,
+      TESTNET_CONFIG,
+    );
+
+    (http.get as any).mockResolvedValue(migrationStatus);
+    (http.post as any).mockResolvedValue({ success: true });
+
+    await module.getStatus();
+    await module.start();
+    await module.dismissOrders({ legacyOrderIds: [1, 2] });
+    await module.restoreOrders({ restorations: [] });
+    await module.migrateFunds({
+      batchWithdraw: {
+        nonce: "1",
+        deadline: "2",
+        signature: "0xsigned" as Hex,
+      },
+      setOperator: {
+        nonce: "3",
+        deadline: "4",
+        signature: "0xsigned" as Hex,
+      },
+    });
+
+    expect(http.get).toHaveBeenCalledWith("/account/migration", {
+      address: ADDRESS,
+    });
+    expect(http.post).toHaveBeenCalledWith("/account/migration/start", {
+      address: ADDRESS,
+    });
+    expect(http.post).toHaveBeenCalledWith(
+      "/account/migration/dismiss-orders",
+      {
+        address: ADDRESS,
+        legacyOrderIds: [1, 2],
+      },
+    );
+    expect(http.post).toHaveBeenCalledWith(
+      "/account/migration/restore-orders",
+      {
+        address: ADDRESS,
+        restorations: [],
+      },
+    );
+    expect(http.post).toHaveBeenCalledWith(
+      "/account/migration/migrate-funds",
+      expect.objectContaining({
+        address: ADDRESS,
+      }),
+    );
+  });
+
+  it("signs and submits explicit address authorization for cross-wallet start", async () => {
+    const http = createMockHttp();
+    const builder = createMockBuilder();
+    const walletClient = {
+      ...createMockWalletClient(),
+      signMessage: vi.fn().mockResolvedValue("0xsigned-message"),
+    } as any;
+    const module = new MigrationModule(
+      http,
+      builder,
+      walletClient,
+      ACCOUNT,
+      ADDRESS,
+      TESTNET_CONFIG,
+    );
+
+    const authorization = await module.signAddressAuthorization({
+      action: "start",
+    });
+
+    expect(authorization).toEqual({
+      deadline: expect.any(String),
+      signature: "0xsigned-message",
+    });
+
+    await module.start({
+      address: ADDRESS,
+      authorization,
+    });
+
+    expect(walletClient.signMessage).toHaveBeenCalledWith({
+      account: ACCOUNT,
+      message: expect.stringContaining(`Wallet: ${ADDRESS.toLowerCase()}`),
+    });
+    expect(http.post).toHaveBeenCalledWith("/account/migration/start", {
+      address: ADDRESS,
+      authorization,
+    });
+  });
+
+  it("signs dismiss authorization with sorted legacy order ids", async () => {
+    const http = createMockHttp();
+    const builder = createMockBuilder();
+    const walletClient = {
+      ...createMockWalletClient(),
+      signMessage: vi.fn().mockResolvedValue("0xsigned-message"),
+    } as any;
+    const module = new MigrationModule(
+      http,
+      builder,
+      walletClient,
+      ACCOUNT,
+      ADDRESS,
+      TESTNET_CONFIG,
+    );
+
+    await module.signAddressAuthorization({
+      action: "dismiss-orders",
+      legacyOrderIds: [9, 3, 5],
+    });
+
+    expect(walletClient.signMessage).toHaveBeenCalledWith({
+      account: ACCOUNT,
+      message: expect.stringContaining("Legacy order ids: 3,5,9"),
+    });
+  });
+
+  it("rejects authorization without an explicit address override", async () => {
+    const http = createMockHttp();
+    const module = new MigrationModule(
+      http,
+      null,
+      null,
+      null,
+      null,
+      TESTNET_CONFIG,
+    );
+
+    await expect(
+      module.start({
+        authorization: {
+          deadline: "1",
+          signature: "0xsigned" as Hex,
+        },
+      }),
+    ).rejects.toThrow(
+      "Migration address authorization requires an explicit address override.",
+    );
+
+    await expect(
+      module.dismissOrders({
+        authorization: {
+          deadline: "1",
+          signature: "0xsigned" as Hex,
+        },
+      }),
+    ).rejects.toThrow(
+      "Migration address authorization requires an explicit address override.",
     );
   });
 
@@ -198,6 +360,28 @@ describe("MigrationModule", () => {
     expect(walletClient.signTypedData).toHaveBeenCalledTimes(3);
   });
 
+  it("loads migration status for the signer address when building sponsored funds signatures", async () => {
+    const http = createMockHttp();
+    const builder = createMockBuilder();
+    const walletClient = createMockWalletClient();
+    const module = new MigrationModule(
+      http,
+      builder,
+      walletClient,
+      ACCOUNT,
+      ADDRESS,
+      TESTNET_CONFIG,
+    );
+
+    (http.get as any).mockResolvedValue(migrationStatus);
+
+    await module.signSponsoredMigrateFunds();
+
+    expect(http.get).toHaveBeenCalledWith("/account/migration", {
+      address: ADDRESS,
+    });
+  });
+
   it("builds a restore-orders body from pending drafts", async () => {
     const http = createMockHttp();
     const builder = createMockBuilder();
@@ -228,6 +412,7 @@ describe("MigrationModule", () => {
       }),
     );
     expect(body).toEqual({
+      address: ADDRESS,
       restorations: [
         {
           legacyOrderId: 99,

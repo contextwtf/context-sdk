@@ -51,7 +51,6 @@ export const ENDPOINTS = {
   },
   gasless: {
     operator: "/gasless/operator",
-    depositWithPermit: "/gasless/deposit-with-permit",
   },
   questions: {
     submit: "/questions",

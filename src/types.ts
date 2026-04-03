@@ -531,8 +531,31 @@ export interface StartMigrationResult {
   legacyOpenOrderCount: number;
 }
 
-export interface DismissMigrationOrdersRequest {
+export interface PublicAddressAuthorization {
+  deadline: string;
+  signature: Hex;
+}
+
+export interface MigrationAddressRequest {
+  address?: Address;
+}
+
+export interface StartMigrationRequest extends MigrationAddressRequest {
+  authorization?: PublicAddressAuthorization;
+}
+
+export interface DismissMigrationOrdersRequest extends MigrationAddressRequest {
+  authorization?: PublicAddressAuthorization;
   legacyOrderIds?: number[];
+}
+
+export type MigrationAuthorizationAction = "start" | "dismiss-orders";
+
+export interface SignMigrationAddressAuthorizationRequest {
+  action: MigrationAuthorizationAction;
+  address?: Address;
+  legacyOrderIds?: number[];
+  deadline?: string | bigint;
 }
 
 export interface DismissMigrationOrdersResult {
@@ -548,10 +571,12 @@ export interface SignedMigrationAction {
 
 export type SponsoredMigrateFundsRequest =
   | {
+      address?: Address;
       batchWithdraw: SignedMigrationAction;
       setOperator: SignedMigrationAction;
     }
   | {
+      address?: Address;
       chunks: Array<{
         batchWithdraw: SignedMigrationAction;
       }>;
@@ -596,4 +621,9 @@ export interface RestoreMigrationOrdersResult {
       }
   >;
   settlementV2Address: Address;
+}
+
+export interface RestoreMigrationOrdersRequest {
+  address?: Address;
+  restorations: RestoreMigrationOrderRequest[];
 }

@@ -335,12 +335,6 @@ export class AccountModule {
     });
   }
 
-  async gaslessDeposit(_amount: number): Promise<never> {
-    throw new ContextConfigError(
-      "gaslessDeposit() is currently unavailable. Use onchain deposit() instead.",
-    );
-  }
-
   // ─── Gasless Relay (low-level) ───
 
   async relayOperatorApproval(
@@ -349,12 +343,6 @@ export class AccountModule {
     return this.http.post<GaslessOperatorResult>(
       ENDPOINTS.gasless.operator,
       req,
-    );
-  }
-
-  async relayDeposit(): Promise<never> {
-    throw new ContextConfigError(
-      "relayDeposit() is currently unavailable because /gasless/deposit-with-permit is disabled.",
     );
   }
 
