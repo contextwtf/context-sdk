@@ -31,6 +31,23 @@ function createMockBuilder(): OrderBuilder {
       inventoryModeConstraint: 0,
       signature: "0xsig",
     }),
+    buildAndSignMarket: vi.fn().mockResolvedValue({
+      type: "limit",
+      marketId: "0xabc",
+      trader: "0x1234567890abcdef1234567890abcdef12345678",
+      price: "250000",
+      size: "5000000",
+      outcomeIndex: 1,
+      side: 0,
+      nonce: "0xnonce",
+      expiry: "9999999999",
+      maxFee: "12500",
+      timeInForce: 1,
+      clientOrderType: "market",
+      makerRoleConstraint: 0,
+      inventoryModeConstraint: 0,
+      signature: "0xsig",
+    }),
     signCancel: vi.fn().mockResolvedValue("0xcancelsig" as Hex),
   } as unknown as OrderBuilder;
 }
@@ -156,6 +173,30 @@ describe("Orders module", () => {
         nonce,
         signature: "0xcancelsig",
       });
+    });
+
+    it("cancelOrder() uses settlementVersion from the order", async () => {
+      await orders.cancelOrder({
+        nonce: "0xnonce456" as Hex,
+        settlementVersion: 2,
+      } as any);
+
+      expect(builder.signCancel).toHaveBeenCalledWith("0xnonce456", 2);
+    });
+
+    it("cancelOrder() surfaces legacy signing rejection", async () => {
+      (builder.signCancel as any).mockRejectedValueOnce(
+        new ContextConfigError(
+          "Order cancellation only supports SettlementV2 signing.",
+        ),
+      );
+
+      await expect(
+        orders.cancelOrder({
+          nonce: "0xnoncelegacy" as Hex,
+          settlementVersion: 1,
+        } as any),
+      ).rejects.toThrow(ContextConfigError);
     });
 
     it("mine() calls list with trader address", async () => {

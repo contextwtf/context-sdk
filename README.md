@@ -80,7 +80,6 @@ await ctx.account.deposit(100); // 100 USDC
 
 // Or use gasless (no ETH needed):
 await ctx.account.gaslessSetup();
-await ctx.account.gaslessDeposit(100);
 ```
 
 ### Create a Market

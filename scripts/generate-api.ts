@@ -15,12 +15,17 @@ const OUT_DIR = path.join(import.meta.dirname, "..", "src", "generated");
 // auto-derived from the last path segment(s) using camelCase.
 // ---------------------------------------------------------------------------
 const KEY_OVERRIDES: Record<string, string> = {
+  // account
+  "/account/migration": "migration",
+  "/account/migration/start": "migrationStart",
+  "/account/migration/dismiss-orders": "migrationDismissOrders",
+  "/account/migration/restore-orders": "migrationRestoreOrders",
+  "/account/migration/migrate-funds": "migrationMigrateFunds",
+
   // markets
   "/markets": "list",
   "/markets/{id}": "get",
   "/markets/{id}/prices": "prices",
-  "/markets/{id}/oracle/quotes": "oracleQuotes",
-  "/markets/{id}/oracle/quotes/latest": "oracleQuotesLatest",
 
   // questions
   "/questions": "submit",
@@ -51,7 +56,6 @@ const KEY_OVERRIDES: Record<string, string> = {
 
   // gasless
   "/gasless/operator": "operator",
-  "/gasless/deposit-with-permit": "depositWithPermit",
 };
 
 // ---------------------------------------------------------------------------
@@ -133,7 +137,7 @@ async function main() {
   }
 
   // Build the source text
-  let endpointsSrc = `/**\n * Auto-generated from ${SPEC_URL}\n * DO NOT EDIT — re-run \`bun run generate\` instead.\n */\n\n`;
+  let endpointsSrc = `/**\n * Auto-generated from the Context public OpenAPI spec.\n * DO NOT EDIT — re-run \`bun run generate\` instead.\n */\n\n`;
   endpointsSrc += `export const ENDPOINTS = {\n`;
 
   for (const [group, entries] of groups) {

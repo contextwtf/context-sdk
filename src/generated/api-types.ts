@@ -1,4 +1,89 @@
 export interface paths {
+    "/account/migration": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get migration status */
+        get: operations["getPublicV2AccountMigration"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/account/migration/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Start migration by retiring legacy orders */
+        post: operations["startPublicV2AccountMigration"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/account/migration/dismiss-orders": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Dismiss pending migration restorations */
+        post: operations["dismissPublicV2AccountMigrationOrders"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/account/migration/restore-orders": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Restore retired legacy orders as SettlementV2 orders */
+        post: operations["restorePublicV2AccountMigrationOrders"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/account/migration/migrate-funds": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Execute sponsored legacy funds migration */
+        post: operations["migrateFundsPublicV2AccountMigration"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/activity": {
         parameters: {
             query?: never;
@@ -25,6 +110,23 @@ export interface paths {
         };
         /** List markets */
         get: operations["listPublicV2Markets"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/markets/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Search markets */
+        get: operations["searchPublicV2Markets"];
         put?: never;
         post?: never;
         delete?: never;
@@ -101,41 +203,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/markets/{id}/oracle/quotes": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** List oracle quotes */
-        get: operations["listPublicV2MarketOracleQuotes"];
-        put?: never;
-        /** Request oracle quote */
-        post: operations["createPublicV2MarketOracleQuote"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/markets/{id}/oracle/quotes/latest": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Get latest oracle quote */
-        get: operations["getPublicV2MarketOracleQuoteLatest"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/markets/{id}/orderbook": {
         parameters: {
             query?: never;
@@ -162,23 +229,6 @@ export interface paths {
         };
         /** Get market price history */
         get: operations["getPublicV2MarketPrices"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/markets/{id}/quotes": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Get market quotes */
-        get: operations["getPublicV2MarketQuotes"];
         put?: never;
         post?: never;
         delete?: never;
@@ -511,23 +561,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/gasless/deposit-with-permit": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Relay depositWithPermit */
-        post: operations["depositPublicV2GaslessWithPermit"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/questions": {
         parameters: {
             query?: never;
@@ -583,6 +616,512 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        MigrationStatus: {
+            migrationActive: boolean;
+            /**
+             * @description EVM address
+             * @example 0x1111111111111111111111111111111111111111
+             */
+            walletAddress: string;
+            holdings: {
+                /**
+                 * @description EVM address
+                 * @example 0x1111111111111111111111111111111111111111
+                 */
+                legacy: string;
+                /**
+                 * @description EVM address
+                 * @example 0x1111111111111111111111111111111111111111
+                 */
+                new: string;
+            };
+            /**
+             * @description EVM address
+             * @example 0x1111111111111111111111111111111111111111
+             */
+            settlementV2Address: string;
+            legacyBalances: components["schemas"]["MigrationBalance"][];
+            newBalances: components["schemas"]["MigrationBalance"][];
+            v2OperatorApproved: boolean;
+            /**
+             * @description Integer encoded as decimal string
+             * @example 1000000
+             */
+            newHoldingsOperatorNonce: string | null;
+            fundsMigrationPlan: components["schemas"]["MigrationFundsPlan"];
+            pendingRestorations: components["schemas"]["PendingMigrationRestoration"][];
+            voidedLegacyOrderCount: number;
+            legacyOpenOrderCount: number;
+            sponsoredFundsMigrationAvailable: boolean;
+            /**
+             * @description EVM address
+             * @example 0x1111111111111111111111111111111111111111
+             */
+            sponsoredRelayerAddress: string;
+            sponsoredFundsMigrationStatus: components["schemas"]["SponsoredFundsMigrationStatus"];
+            canStart: boolean;
+            canMigrateFunds: boolean;
+            canRestoreOrders: boolean;
+            canDismissOrders: boolean;
+            migrationComplete: boolean;
+        };
+        MigrationBalance: {
+            /**
+             * @description EVM address
+             * @example 0x1111111111111111111111111111111111111111
+             */
+            token: string;
+            /**
+             * @description Integer encoded as decimal string
+             * @example 1000000
+             */
+            balance: string;
+        };
+        MigrationFundsPlan: {
+            phase: string;
+            callCount: number;
+            chunkCount: number;
+            calls: unknown[];
+            tokens: components["schemas"]["MigrationFundsPlanToken"][];
+            chunks: components["schemas"]["MigrationFundsPlanChunk"][];
+        };
+        MigrationFundsPlanToken: {
+            /**
+             * @description EVM address
+             * @example 0x1111111111111111111111111111111111111111
+             */
+            token: string;
+            /**
+             * @description Integer encoded as decimal string
+             * @example 1000000
+             */
+            amount: string;
+        };
+        MigrationFundsPlanChunk: {
+            callCount: number;
+            calls: unknown[];
+            tokens: components["schemas"]["MigrationFundsPlanToken"][];
+        };
+        PendingMigrationRestoration: {
+            id: number;
+            legacyOrderId: number;
+            /**
+             * @description 32-byte hex hash
+             * @example 0x1111111111111111111111111111111111111111111111111111111111111111
+             */
+            legacyOrderHash: string;
+            /**
+             * @description 32-byte hex hash
+             * @example 0x1111111111111111111111111111111111111111111111111111111111111111
+             */
+            legacyMarketId: string;
+            status: string;
+            draft: components["schemas"]["MigrationRestorationDraft"];
+            error: string | null;
+            market: {
+                shortQuestion: string;
+                outcomeNames: string[];
+            } | null;
+        };
+        MigrationRestorationDraft: {
+            /** @enum {string} */
+            type: "limit" | "market";
+            /**
+             * @description 32-byte hex hash
+             * @example 0x1111111111111111111111111111111111111111111111111111111111111111
+             */
+            marketId: string;
+            /**
+             * @description EVM address
+             * @example 0x1111111111111111111111111111111111111111
+             */
+            trader?: string;
+            side: 0 | 1;
+            /**
+             * @description Integer encoded as decimal string
+             * @example 1000000
+             */
+            price: string;
+            /**
+             * @description Integer encoded as decimal string
+             * @example 1000000
+             */
+            size?: string;
+            /**
+             * @description Integer encoded as decimal string
+             * @example 1000000
+             */
+            remainingSize: string;
+            outcomeIndex: number;
+            /**
+             * @description Hex string
+             * @example 0xabc123
+             */
+            nonce?: string;
+            /**
+             * @description Integer encoded as decimal string
+             * @example 1000000
+             */
+            expiry: string;
+            /**
+             * @description Integer encoded as decimal string
+             * @example 1000000
+             */
+            maxFee: string;
+            /** @description Time in force. `0` = good-till-cancelled (GTC), `1` = immediate-or-cancel (IOC), `2` = fill-or-kill (FOK). */
+            timeInForce?: 0 | 1 | 2;
+            /** @enum {string} */
+            clientOrderType?: "limit" | "market";
+            /** @description Constraint enum. `0` = any, `1` = yes, `2` = no / no-inventory depending on the field. */
+            makerRoleConstraint: 0 | 1 | 2;
+            /** @description Constraint enum. `0` = any, `1` = yes, `2` = no / no-inventory depending on the field. */
+            inventoryModeConstraint: 0 | 1 | 2;
+            reason: string;
+        };
+        SponsoredFundsMigrationStatus: {
+            status: string;
+            /**
+             * @description 32-byte hex hash
+             * @example 0x1111111111111111111111111111111111111111111111111111111111111111
+             */
+            userOperationHash: string;
+            /**
+             * @description 32-byte hex hash
+             * @example 0x1111111111111111111111111111111111111111111111111111111111111111
+             */
+            txHash: string;
+            error: string | null;
+        } | null;
+        PublicApiError: {
+            message: string;
+        } & {
+            [key: string]: unknown;
+        };
+        StartMigrationResponse: {
+            /** @enum {boolean} */
+            success: true;
+            retiredCount: number;
+            restorableCount: number;
+            legacyBalances: components["schemas"]["MigrationBalance"][];
+            newBalances: components["schemas"]["MigrationBalance"][];
+            fundsMigrationPlan: components["schemas"]["MigrationFundsPlan"];
+            pendingRestorations: {
+                id: number;
+                legacyOrderId: number;
+                /**
+                 * @description 32-byte hex hash
+                 * @example 0x1111111111111111111111111111111111111111111111111111111111111111
+                 */
+                legacyMarketId: string;
+                status: string;
+                draft: components["schemas"]["MigrationRestorationDraft"];
+            }[];
+            legacyOpenOrderCount: number;
+        };
+        PublicStartMigrationBody: {
+            /**
+             * @description Optional wallet address override for SDK/API flows. When omitted, the server uses the authenticated API account wallet.
+             * @example 0x1111111111111111111111111111111111111111
+             */
+            address?: string;
+            /** @description Required when `address` overrides the authenticated API account wallet. The requested wallet must sign the public migration authorization message. */
+            authorization?: {
+                /**
+                 * @description Integer encoded as decimal string
+                 * @example 1000000
+                 */
+                deadline: string;
+                /**
+                 * @description Hex string
+                 * @example 0xabc123
+                 */
+                signature: string;
+            };
+        };
+        DismissMigrationOrdersResponse: {
+            /** @enum {boolean} */
+            success: true;
+            dismissedCount: number;
+        };
+        PublicDismissMigrationOrdersBody: {
+            /**
+             * @description Optional wallet address override for SDK/API flows. When omitted, the server uses the authenticated API account wallet.
+             * @example 0x1111111111111111111111111111111111111111
+             */
+            address?: string;
+            /** @description Required when `address` overrides the authenticated API account wallet. The requested wallet must sign the public migration authorization message. */
+            authorization?: {
+                /**
+                 * @description Integer encoded as decimal string
+                 * @example 1000000
+                 */
+                deadline: string;
+                /**
+                 * @description Hex string
+                 * @example 0xabc123
+                 */
+                signature: string;
+            };
+            legacyOrderIds?: number[];
+        };
+        RestoreMigrationOrdersResponse: {
+            success: boolean;
+            restoredCount: number;
+            failedCount: number;
+            results: components["schemas"]["RestoreMigrationOrderResult"][];
+            /**
+             * @description EVM address
+             * @example 0x1111111111111111111111111111111111111111
+             */
+            settlementV2Address: string;
+        };
+        RestoreMigrationOrderResult: {
+            legacyOrderId: number;
+            /** @enum {boolean} */
+            success: true;
+            restoredOrderId: number;
+            /**
+             * @description 32-byte hex hash
+             * @example 0x1111111111111111111111111111111111111111111111111111111111111111
+             */
+            restoredOrderHash: string;
+        } | {
+            legacyOrderId: number;
+            /** @enum {boolean} */
+            success: false;
+            error: string;
+        };
+        PublicRestoreMigrationOrdersBody: {
+            /**
+             * @description Optional wallet address override for SDK/API flows. When omitted, the server uses the authenticated API account wallet.
+             * @example 0x1111111111111111111111111111111111111111
+             */
+            address?: string;
+            restorations: {
+                legacyOrderId: number;
+                order: components["schemas"]["PublicCreateOrderBody"];
+            }[];
+        };
+        PublicCreateOrderBody: {
+            /** @enum {string} */
+            type: "limit";
+            /**
+             * @description 32-byte hex hash
+             * @example 0x1111111111111111111111111111111111111111111111111111111111111111
+             */
+            marketId: string;
+            /**
+             * @description EVM address
+             * @example 0x1111111111111111111111111111111111111111
+             */
+            trader: string;
+            /**
+             * @description Integer encoded as decimal string
+             * @example 1000000
+             */
+            price: string;
+            /**
+             * @description Requested share size in 6-decimal fixed-point units. The API accepts this high-level limit-order shape and maps it to the current settlement model after migration.
+             * @example 1000000
+             */
+            size: string;
+            /**
+             * @description Optional pre-fee collateral budget for buy orders, in 6-decimal fixed-point units. The normalized SettlementV2 collateral cap adds `maxFee` on top of this value.
+             * @example 1000000
+             */
+            buyValue?: string;
+            outcomeIndex: number;
+            side: 0 | 1;
+            /**
+             * @description Hex string
+             * @example 0xabc123
+             */
+            nonce: string;
+            /**
+             * @description Integer encoded as decimal string
+             * @example 1000000
+             */
+            expiry: string;
+            /**
+             * @description Integer encoded as decimal string
+             * @example 1000000
+             */
+            maxFee: string;
+            /** @description Optional time-in-force override for the normalized SettlementV2 order. When omitted, the server uses good-till-cancelled (GTC). */
+            timeInForce?: 0 | 1 | 2;
+            /**
+             * @description Optional client-side intent label preserved by the API. This does not change signature verification.
+             * @enum {string}
+             */
+            clientOrderType?: "limit" | "market";
+            /** @description Constraint enum. `0` = any, `1` = yes, `2` = no / no-inventory depending on the field. */
+            makerRoleConstraint: 0 | 1 | 2;
+            /** @description Constraint enum. `0` = any, `1` = yes, `2` = no / no-inventory depending on the field. */
+            inventoryModeConstraint: 0 | 1 | 2;
+            /**
+             * @description Hex string
+             * @example 0xabc123
+             */
+            signature: string;
+        } | {
+            /** @enum {string} */
+            type: "market";
+            /**
+             * @description 32-byte hex hash
+             * @example 0x1111111111111111111111111111111111111111111111111111111111111111
+             */
+            marketId: string;
+            /**
+             * @description EVM address
+             * @example 0x1111111111111111111111111111111111111111
+             */
+            trader: string;
+            /**
+             * @description Worst acceptable execution price in 6-decimal fixed-point units.
+             * @example 1000000
+             */
+            maxPrice: string;
+            /**
+             * @description Requested market-order amount in the existing public API shape. The server maps accepted market inputs to the current execution model.
+             * @example 1000000
+             */
+            maxSize: string;
+            outcomeIndex: number;
+            side: 0 | 1;
+            /**
+             * @description Hex string
+             * @example 0xabc123
+             */
+            nonce: string;
+            /**
+             * @description Integer encoded as decimal string
+             * @example 1000000
+             */
+            expiry: string;
+            /**
+             * @description Integer encoded as decimal string
+             * @example 1000000
+             */
+            maxFee: string;
+            /**
+             * @description Hex string
+             * @example 0xabc123
+             */
+            signature: string;
+        };
+        MigrateFundsResponse: {
+            /** @enum {boolean} */
+            success: true;
+            /**
+             * @description 32-byte hex hash
+             * @example 0x1111111111111111111111111111111111111111111111111111111111111111
+             */
+            userOperationHash: string;
+            /**
+             * @description 32-byte hex hash
+             * @example 0x1111111111111111111111111111111111111111111111111111111111111111
+             */
+            txHash: string;
+            executions: components["schemas"]["SponsoredMigrationExecution"][];
+            legacyBalances: components["schemas"]["MigrationBalance"][];
+            newBalances: components["schemas"]["MigrationBalance"][];
+            v2OperatorApproved: boolean;
+        };
+        SponsoredMigrationExecution: {
+            /**
+             * @description 32-byte hex hash
+             * @example 0x1111111111111111111111111111111111111111111111111111111111111111
+             */
+            userOperationHash: string;
+            /**
+             * @description 32-byte hex hash
+             * @example 0x1111111111111111111111111111111111111111111111111111111111111111
+             */
+            txHash: string;
+        };
+        PublicSponsoredMigrateFundsBody: {
+            /**
+             * @description Optional wallet address override for SDK/API flows. When omitted, the server uses the authenticated API account wallet.
+             * @example 0x1111111111111111111111111111111111111111
+             */
+            address?: string;
+            batchWithdraw: {
+                /**
+                 * @description Integer encoded as decimal string
+                 * @example 1000000
+                 */
+                nonce: string;
+                /**
+                 * @description Integer encoded as decimal string
+                 * @example 1000000
+                 */
+                deadline: string;
+                /**
+                 * @description Hex string
+                 * @example 0xabc123
+                 */
+                signature: string;
+            };
+            setOperator: {
+                /**
+                 * @description Integer encoded as decimal string
+                 * @example 1000000
+                 */
+                nonce: string;
+                /**
+                 * @description Integer encoded as decimal string
+                 * @example 1000000
+                 */
+                deadline: string;
+                /**
+                 * @description Hex string
+                 * @example 0xabc123
+                 */
+                signature: string;
+            };
+        } | {
+            /**
+             * @description Optional wallet address override for SDK/API flows. When omitted, the server uses the authenticated API account wallet.
+             * @example 0x1111111111111111111111111111111111111111
+             */
+            address?: string;
+            chunks: {
+                batchWithdraw: {
+                    /**
+                     * @description Integer encoded as decimal string
+                     * @example 1000000
+                     */
+                    nonce: string;
+                    /**
+                     * @description Integer encoded as decimal string
+                     * @example 1000000
+                     */
+                    deadline: string;
+                    /**
+                     * @description Hex string
+                     * @example 0xabc123
+                     */
+                    signature: string;
+                };
+            }[];
+            setOperator: {
+                /**
+                 * @description Integer encoded as decimal string
+                 * @example 1000000
+                 */
+                nonce: string;
+                /**
+                 * @description Integer encoded as decimal string
+                 * @example 1000000
+                 */
+                deadline: string;
+                /**
+                 * @description Hex string
+                 * @example 0xabc123
+                 */
+                signature: string;
+            };
+        };
         ActivityResponse: {
             /**
              * @description 32-byte hex hash
@@ -657,11 +1196,6 @@ export interface components {
         Pagination: {
             cursor: string | null;
             hasMore: boolean;
-        };
-        PublicApiError: {
-            message: string;
-        } & {
-            [key: string]: unknown;
         };
         MarketList: {
             markets: components["schemas"]["Market"][];
@@ -770,6 +1304,10 @@ export interface components {
             displayName: string | null;
             profileImageUrl: string | null;
         };
+        MarketSearchResponse: {
+            markets: components["schemas"]["Market"][];
+            hasMore: boolean;
+        };
         MarketCreated: {
             /**
              * @description 32-byte hex hash
@@ -802,33 +1340,6 @@ export interface components {
                 };
             } | null;
         };
-        OracleQuoteList: {
-            quotes: components["schemas"]["OracleQuote"][];
-        };
-        OracleQuote: {
-            id: number;
-            /** @enum {string} */
-            status: "pending" | "processing" | "completed" | "failed";
-            probability: number | null;
-            /** @enum {string|null} */
-            confidence: "low" | "medium" | "high" | null;
-            reasoning: string | null;
-            referenceMarketsCount: number;
-            /** Format: date-time */
-            createdAt: string;
-            /** Format: date-time */
-            completedAt: string | null;
-        };
-        OracleQuoteLatest: {
-            quote: components["schemas"]["OracleQuote"] & unknown;
-        };
-        OracleQuoteCreated: {
-            id: number;
-            /** @enum {string} */
-            status: "pending" | "processing" | "completed" | "failed";
-            /** Format: date-time */
-            createdAt: string;
-        };
         Orderbook: {
             marketId: string;
             bids: {
@@ -849,21 +1360,6 @@ export interface components {
             startTime: number;
             endTime: number;
             interval: number;
-        };
-        Quotes: {
-            marketId: string;
-            yes: {
-                bid: number | null;
-                ask: number | null;
-                last: number | null;
-            };
-            no: {
-                bid: number | null;
-                ask: number | null;
-                last: number | null;
-            };
-            spread: number | null;
-            timestamp: string;
         };
         SimulateResult: {
             marketId: string;
@@ -940,17 +1436,17 @@ export interface components {
              */
             price: string;
             /**
-             * @description Integer encoded as decimal string
+             * @description Settlement v1 and v2 sells: share units. Settlement v2 buys: all-in budget/debit units (collateral + fee cap).
              * @example 1000000
              */
             size: string;
             /**
-             * @description Integer encoded as decimal string
+             * @description Same units as `size`.
              * @example 1000000
              */
             filledSize: string;
             /**
-             * @description Integer encoded as decimal string
+             * @description Same units as `size`.
              * @example 1000000
              */
             remainingSize: string;
@@ -964,8 +1460,34 @@ export interface components {
             /** Format: date-time */
             voidedAt: string | null;
             /** @enum {string|null} */
-            voidReason: "UNFILLED_MARKET_ORDER" | "UNDER_COLLATERALIZED" | "MISSING_OPERATOR_APPROVAL" | "BELOW_MIN_FILL_SIZE" | "INVALID_SIGNATURE" | "MARKET_RESOLVED" | "ADMIN_VOID" | null;
+            voidReason: "UNFILLED_MARKET_ORDER" | "IOC_CLOSED" | "UNDER_COLLATERALIZED" | "MISSING_OPERATOR_APPROVAL" | "BELOW_MIN_FILL_SIZE" | "INVALID_SIGNATURE" | "MARKET_RESOLVED" | "ADMIN_VOID" | "MIGRATION_RETIRED" | null;
             outcomeIndex: number;
+            /**
+             * @description Integer encoded as decimal string
+             * @example 1000000
+             */
+            expiry: string;
+            /** @description Settlement family. `1` = legacy settlement. `2` = the post-migration settlement used for new orders. */
+            settlementVersion: 1 | 2;
+            /** @description Normalized SettlementV2 order kind for this stored order. Null for legacy orders. */
+            sv2OrderKind: 0 | 1 | 2 | unknown;
+            /** @description Normalized SettlementV2 time in force for this stored order. Null for legacy orders. */
+            sv2TimeInForce: 0 | 1 | 2 | unknown;
+            /**
+             * @description SettlementV2 normalized minimum shares-out constraint. Set for buy orders, otherwise `null`.
+             * @example 1000000
+             */
+            sv2MinSharesOut: string | null;
+            /**
+             * @description SettlementV2 normalized maximum collateral-in cap. For buys and sell-no-inventory orders this is an all-in cap including `maxFee`.
+             * @example 1000000
+             */
+            sv2MaxCollateralIn: string | null;
+            /**
+             * @description SettlementV2 normalized minimum collateral-out floor. For sell-from-inventory orders this is net of `maxFee`.
+             * @example 1000000
+             */
+            sv2MinCollateralOut: string | null;
         };
         OrderList: {
             orders: components["schemas"]["OrderWithAvgFillPrice"][];
@@ -1182,6 +1704,13 @@ export interface components {
              * @example 1000000
              */
             currentValue: string;
+            /** @enum {string|null} */
+            claimState: "claimable" | "claiming" | "autoclaimed" | null;
+            /**
+             * @description Integer encoded as decimal string
+             * @example 1000000
+             */
+            claimableAmount: string;
             /**
              * @description Integer encoded as decimal string
              * @example 1000000
@@ -1275,6 +1804,18 @@ export interface components {
              * @example 1000000
              */
             price: string;
+            /** @enum {string|null} */
+            claimState: "claimable" | "claiming" | "autoclaimed" | null;
+            /**
+             * @description Integer encoded as decimal string
+             * @example 1000000
+             */
+            claimableAmount: string;
+            /**
+             * @description Integer encoded as decimal string
+             * @example 1000000
+             */
+            tokensRedeemed: string;
             /** @enum {string} */
             status: "open" | "closed";
         };
@@ -1418,35 +1959,6 @@ export interface components {
              */
             relayer: string;
         };
-        GaslessDepositResult: {
-            /** @enum {boolean} */
-            success: true;
-            /**
-             * @description 32-byte hex hash
-             * @example 0x1111111111111111111111111111111111111111111111111111111111111111
-             */
-            txHash: string;
-            /**
-             * @description EVM address
-             * @example 0x1111111111111111111111111111111111111111
-             */
-            user: string;
-            /**
-             * @description EVM address
-             * @example 0x1111111111111111111111111111111111111111
-             */
-            token: string;
-            /**
-             * @description Integer encoded as decimal string
-             * @example 1000000
-             */
-            amount: string;
-            /**
-             * @description EVM address
-             * @example 0x1111111111111111111111111111111111111111
-             */
-            relayer: string;
-        };
         QuestionPostResponse: {
             submissionId: string;
             /** @description Always empty on initial submission */
@@ -1561,6 +2073,432 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    getPublicV2AccountMigration: {
+        parameters: {
+            query?: {
+                /** @description Optional wallet address override for SDK/API flows. When omitted, the server uses the authenticated API account wallet. */
+                address?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Migration status */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MigrationStatus"];
+                };
+            };
+            /** @description Bad request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicApiError"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicApiError"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicApiError"];
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicApiError"];
+                };
+            };
+            /** @description Rate limited */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicApiError"];
+                };
+            };
+            /** @description Internal server error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicApiError"];
+                };
+            };
+        };
+    };
+    startPublicV2AccountMigration: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                /** @example {} */
+                "application/json": components["schemas"]["PublicStartMigrationBody"];
+            };
+        };
+        responses: {
+            /** @description Migration started */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StartMigrationResponse"];
+                };
+            };
+            /** @description Bad request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicApiError"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicApiError"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicApiError"];
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicApiError"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicApiError"];
+                };
+            };
+            /** @description Rate limited */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicApiError"];
+                };
+            };
+            /** @description Internal server error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicApiError"];
+                };
+            };
+        };
+    };
+    dismissPublicV2AccountMigrationOrders: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PublicDismissMigrationOrdersBody"];
+            };
+        };
+        responses: {
+            /** @description Pending restorations dismissed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DismissMigrationOrdersResponse"];
+                };
+            };
+            /** @description Bad request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicApiError"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicApiError"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicApiError"];
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicApiError"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicApiError"];
+                };
+            };
+            /** @description Rate limited */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicApiError"];
+                };
+            };
+            /** @description Internal server error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicApiError"];
+                };
+            };
+        };
+    };
+    restorePublicV2AccountMigrationOrders: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PublicRestoreMigrationOrdersBody"];
+            };
+        };
+        responses: {
+            /** @description Restoration attempt result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RestoreMigrationOrdersResponse"];
+                };
+            };
+            /** @description Bad request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicApiError"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicApiError"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicApiError"];
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicApiError"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicApiError"];
+                };
+            };
+            /** @description Rate limited */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicApiError"];
+                };
+            };
+            /** @description Internal server error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicApiError"];
+                };
+            };
+        };
+    };
+    migrateFundsPublicV2AccountMigration: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PublicSponsoredMigrateFundsBody"];
+            };
+        };
+        responses: {
+            /** @description Sponsored migration executed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MigrateFundsResponse"];
+                };
+            };
+            /** @description Bad request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicApiError"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicApiError"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicApiError"];
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicApiError"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicApiError"];
+                };
+            };
+            /** @description Rate limited */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicApiError"];
+                };
+            };
+            /** @description Internal server error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicApiError"];
+                };
+            };
+        };
+    };
     listPublicV2Activity: {
         parameters: {
             query?: {
@@ -1687,6 +2625,60 @@ export interface operations {
             };
         };
     };
+    searchPublicV2Markets: {
+        parameters: {
+            query: {
+                /** @description Search query */
+                q: string;
+                /** @description Max results (default 20) */
+                limit?: number;
+                /** @description Offset for pagination (default 0) */
+                offset?: number | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Search results */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MarketSearchResponse"];
+                };
+            };
+            /** @description Bad request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicApiError"];
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicApiError"];
+                };
+            };
+            /** @description Internal server error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicApiError"];
+                };
+            };
+        };
+    };
     createPublicV2Market: {
         parameters: {
             query?: never;
@@ -1714,6 +2706,9 @@ export interface operations {
             /** @description Created market */
             200: {
                 headers: {
+                    "X-RateLimit-Limit": components["headers"]["RateLimitLimitHeader"];
+                    "X-RateLimit-Remaining": components["headers"]["RateLimitRemainingHeader"];
+                    "X-RateLimit-Reset": components["headers"]["RateLimitResetHeader"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -1738,7 +2733,7 @@ export interface operations {
                     "application/json": components["schemas"]["PublicApiError"];
                 };
             };
-            /** @description Forbidden */
+            /** @description API key is not permitted to create markets */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -1756,9 +2751,12 @@ export interface operations {
                     "application/json": components["schemas"]["PublicApiError"];
                 };
             };
-            /** @description Rate limited */
+            /** @description Daily market creation limit exceeded */
             429: {
                 headers: {
+                    "X-RateLimit-Limit": components["headers"]["RateLimitLimitHeader"];
+                    "X-RateLimit-Remaining": components["headers"]["RateLimitRemainingHeader"];
+                    "X-RateLimit-Reset": components["headers"]["RateLimitResetHeader"];
                     [name: string]: unknown;
                 };
                 content: {
@@ -1936,165 +2934,6 @@ export interface operations {
             };
         };
     };
-    listPublicV2MarketOracleQuotes: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Market id hash or slug */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description List oracle quotes */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["OracleQuoteList"];
-                };
-            };
-            /** @description Bad request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PublicApiError"];
-                };
-            };
-            /** @description Not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PublicApiError"];
-                };
-            };
-            /** @description Internal server error */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PublicApiError"];
-                };
-            };
-        };
-    };
-    createPublicV2MarketOracleQuote: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Market id hash or slug */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Quote request accepted */
-            202: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["OracleQuoteCreated"];
-                };
-            };
-            /** @description Bad request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PublicApiError"];
-                };
-            };
-            /** @description Not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PublicApiError"];
-                };
-            };
-            /** @description Quote recently requested (cooldown period) */
-            429: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PublicApiError"];
-                };
-            };
-            /** @description Internal server error */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PublicApiError"];
-                };
-            };
-        };
-    };
-    getPublicV2MarketOracleQuoteLatest: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Market id hash or slug */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Get latest oracle quote */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["OracleQuoteLatest"];
-                };
-            };
-            /** @description Bad request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PublicApiError"];
-                };
-            };
-            /** @description Not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PublicApiError"];
-                };
-            };
-            /** @description Internal server error */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PublicApiError"];
-                };
-            };
-        };
-    };
     getPublicV2MarketOrderbook: {
         parameters: {
             query?: {
@@ -2169,56 +3008,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PriceHistory"];
-                };
-            };
-            /** @description Bad request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PublicApiError"];
-                };
-            };
-            /** @description Not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PublicApiError"];
-                };
-            };
-            /** @description Internal server error */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PublicApiError"];
-                };
-            };
-        };
-    };
-    getPublicV2MarketQuotes: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Market id hash or slug */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Get market quotes */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Quotes"];
                 };
             };
             /** @description Bad request */
@@ -2417,40 +3206,20 @@ export interface operations {
                  *       "trader": "0x1111111111111111111111111111111111111111",
                  *       "price": "510000",
                  *       "size": "1000000",
+                 *       "buyValue": "1000000",
                  *       "outcomeIndex": 0,
                  *       "side": 0,
                  *       "nonce": "0xabc123",
                  *       "expiry": "0",
                  *       "maxFee": "0",
+                 *       "timeInForce": 1,
+                 *       "clientOrderType": "market",
                  *       "makerRoleConstraint": 0,
                  *       "inventoryModeConstraint": 0,
                  *       "signature": "0xabc123"
                  *     }
                  */
-                "application/json": {
-                    /**
-                     * @description 32-byte hex hash
-                     * @example 0x1111111111111111111111111111111111111111111111111111111111111111
-                     */
-                    marketId: string;
-                    /**
-                     * @description EVM address
-                     * @example 0x1111111111111111111111111111111111111111
-                     */
-                    trader: string;
-                    /**
-                     * @description Hex string
-                     * @example 0xabc123
-                     */
-                    nonce: string;
-                    /**
-                     * @description Hex string
-                     * @example 0xabc123
-                     */
-                    signature: string;
-                } & {
-                    [key: string]: unknown;
-                };
+                "application/json": components["schemas"]["PublicCreateOrderBody"];
             };
         };
         responses: {
@@ -2817,9 +3586,7 @@ export interface operations {
                          */
                         signature: string;
                     };
-                    create: {
-                        [key: string]: unknown;
-                    };
+                    create: components["schemas"]["PublicCreateOrderBody"];
                 };
             };
         };
@@ -2899,9 +3666,31 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": {
-                    operations: {
-                        [key: string]: unknown;
-                    }[];
+                    operations: ({
+                        /** @enum {string} */
+                        type: "create";
+                        order: components["schemas"]["PublicCreateOrderBody"];
+                    } | {
+                        /** @enum {string} */
+                        type: "cancel";
+                        cancel: {
+                            /**
+                             * @description EVM address
+                             * @example 0x1111111111111111111111111111111111111111
+                             */
+                            trader: string;
+                            /**
+                             * @description Hex string
+                             * @example 0xabc123
+                             */
+                            nonce: string;
+                            /**
+                             * @description Hex string
+                             * @example 0xabc123
+                             */
+                            signature: string;
+                        };
+                    })[];
                 };
             };
         };
@@ -2981,9 +3770,7 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": {
-                    orders: {
-                        [key: string]: unknown;
-                    }[];
+                    orders: components["schemas"]["PublicCreateOrderBody"][];
                 };
             };
         };
@@ -3930,6 +4717,8 @@ export interface operations {
                      * @example 0x1111111111111111111111111111111111111111
                      */
                     user: string;
+                    /** @description Settlement family. `1` = legacy settlement. `2` = the post-migration settlement used for new orders. */
+                    settlementVersion?: 1 | 2;
                     /** @default true */
                     approved?: boolean;
                     /**
@@ -3958,110 +4747,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["GaslessOperatorResult"];
-                };
-            };
-            /** @description Bad request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PublicApiError"];
-                };
-            };
-            /** @description Unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PublicApiError"];
-                };
-            };
-            /** @description Forbidden */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PublicApiError"];
-                };
-            };
-            /** @description Not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PublicApiError"];
-                };
-            };
-            /** @description Rate limited */
-            429: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PublicApiError"];
-                };
-            };
-            /** @description Internal server error */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PublicApiError"];
-                };
-            };
-        };
-    };
-    depositPublicV2GaslessWithPermit: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": {
-                    /**
-                     * @description EVM address
-                     * @example 0x1111111111111111111111111111111111111111
-                     */
-                    user: string;
-                    /**
-                     * @description Integer encoded as decimal string
-                     * @example 1000000
-                     */
-                    amount: string;
-                    /**
-                     * @description Integer encoded as decimal string
-                     * @example 1000000
-                     */
-                    nonce: string;
-                    /**
-                     * @description Integer encoded as decimal string
-                     * @example 1000000
-                     */
-                    deadline: string;
-                    /**
-                     * @description Hex string
-                     * @example 0xabc123
-                     */
-                    signature: string;
-                };
-            };
-        };
-        responses: {
-            /** @description Relayed transaction */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["GaslessDepositResult"];
                 };
             };
             /** @description Bad request */

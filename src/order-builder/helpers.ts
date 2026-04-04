@@ -35,6 +35,19 @@ export function calculateMaxFee(price: bigint, size: bigint): bigint {
   return fee < 1n ? 1n : fee;
 }
 
+/**
+ * Convert a pre-fee collateral budget in USDC units to the minimum share
+ * amount implied by a limit price. Used to preserve the high-level
+ * market-order API for SettlementV2 buys, where the signing layer adds
+ * `maxFee` on top of `buyValue` when producing the final onchain cap.
+ */
+export function estimateSharesForBuyBudget(
+  buyValue: bigint,
+  price: bigint,
+): bigint {
+  return price > 0n ? (buyValue * SIZE_MULTIPLIER) / price : 0n;
+}
+
 /** Decode on-chain price back to cents. */
 export function decodePriceCents(raw: bigint): number {
   return Number(raw) / Number(PRICE_MULTIPLIER);

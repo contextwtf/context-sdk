@@ -1,9 +1,16 @@
 /**
- * Auto-generated from http://localhost:3001/public/v2/openapi.json
+ * Auto-generated from the Context public OpenAPI spec.
  * DO NOT EDIT — re-run `bun run generate` instead.
  */
 
 export const ENDPOINTS = {
+  account: {
+    migration: "/account/migration",
+    migrationStart: "/account/migration/start",
+    migrationDismissOrders: "/account/migration/dismiss-orders",
+    migrationRestoreOrders: "/account/migration/restore-orders",
+    migrationMigrateFunds: "/account/migration/migrate-funds",
+  },
   activity: {
     global: "/activity",
   },
@@ -14,11 +21,8 @@ export const ENDPOINTS = {
     get: (id: string) => `/markets/${id}` as const,
     activity: (id: string) => `/markets/${id}/activity` as const,
     oracle: (id: string) => `/markets/${id}/oracle` as const,
-    oracleQuotes: (id: string) => `/markets/${id}/oracle/quotes` as const,
-    oracleQuotesLatest: (id: string) => `/markets/${id}/oracle/quotes/latest` as const,
     orderbook: (id: string) => `/markets/${id}/orderbook` as const,
     prices: (id: string) => `/markets/${id}/prices` as const,
-    quotes: (id: string) => `/markets/${id}/quotes` as const,
     simulate: (id: string) => `/markets/${id}/simulate` as const,
   },
   orders: {
@@ -47,7 +51,6 @@ export const ENDPOINTS = {
   },
   gasless: {
     operator: "/gasless/operator",
-    depositWithPermit: "/gasless/deposit-with-permit",
   },
   questions: {
     submit: "/questions",
